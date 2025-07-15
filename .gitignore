@@ -1,0 +1,14 @@
+# Large files, to be downloaded via huggingface.
+g3/index/G3.index
+g3/checkpoints/mercator_finetune_weight.pth
+g3/data/mp16/MP16_Pro_filtered.csv
+index
+checkpoints
+data
+
+# venv and dev stuff
+myenv
+.venv
+.env
+acmmm2025-grand-challenge-gg-credentials.json
+**/__pycache__/

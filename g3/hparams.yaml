@@ -1,0 +1,57 @@
+# sh_siren:
+#   legendre_polys: 30
+#   harmonics_calculation: analytic
+#   hidden_dim: 512
+#   num_layers: 3
+#   lr: 7.887855321604208e-05
+#   wd: 1.3475466222160537e-06
+
+sh_siren:
+  legendre_polys: 40
+  harmonics_calculation: analytic
+  hidden_dim: 512
+  output_dim: 256
+  num_layers: 2
+  lr: 0.0001
+  wd: 0.01
+
+
+projection_eep_rffmlp:
+  projection: eep
+  sigma:
+    - 1
+    - 16
+    - 256
+  hidden_dim: 1024
+  lr: 0.00003
+  wd: 0.000001
+
+projection_mercator_rffmlp:
+  projection: mercator
+  sigma:
+    - 1
+    - 16
+    - 256
+  hidden_dim: 1024
+  lr: 0.00003
+  wd: 0.000001
+
+projection_ecef_rffmlp:
+  projection: ecef
+  sigma:
+    - 1
+    - 16
+    - 256
+  hidden_dim: 1024
+  lr: 0.00003
+  wd: 0.000001
+
+projection_eep_rffmlp:
+  projection: eep
+  sigma:
+    - 1
+    - 16
+    - 256
+  hidden_dim: 1024
+  lr: 0.00003
+  wd: 0.000001
