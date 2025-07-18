@@ -1,37 +1,30 @@
-import itertools
-
-import numpy as np
-import pandas as pd
+from typing import cast
 import torch
 import torch.nn as nn
-from pyproj import Proj, Transformer
-from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from transformers import CLIPImageProcessor, CLIPModel, CLIPTokenizer
 
 from .locationencoder import LocationEncoder
-from .rff.layers import GaussianEncoding
-
 
 class G3(torch.nn.Module):
     def __init__(
         self,
-        device,
-        positional_encoding_type="sh",
-        neural_network_type="siren",
-        hparams=None,
+        device: str,
+        positional_encoding_type: str = "sh",
+        neural_network_type: str = "siren",
+        hparams: dict | None = None,
     ):
         super(G3, self).__init__()
         self.device = device
 
-        clip_model = CLIPModel.from_pretrained("openai/clip-vit-large-patch14")
+        clip_model = cast(CLIPModel, CLIPModel.from_pretrained("openai/clip-vit-large-patch14"))
         self.vision_model = clip_model.vision_model
         self.text_model = clip_model.text_model
-        self.vision_processor = CLIPImageProcessor.from_pretrained(
+        self.vision_processor = cast(CLIPImageProcessor, CLIPImageProcessor.from_pretrained(
             "openai/clip-vit-large-patch14"
-        )
-        self.text_processor = CLIPTokenizer.from_pretrained(
+        ))
+        self.text_processor = cast(CLIPTokenizer, CLIPTokenizer.from_pretrained(
             "openai/clip-vit-large-patch14"
-        )
+        ))
         self.vision_projection = clip_model.visual_projection
         self.text_projection = clip_model.text_projection
 
@@ -67,7 +60,7 @@ class G3(torch.nn.Module):
         self.text_model.requires_grad_(False)
         self.text_projection.requires_grad_(False)
 
-    def forward(self, images, texts, longitude, latitude, return_loss=True):
+    def forward(self, images, texts, longitude, latitude):
         vision_output = self.vision_model(images)[1]
         text_output = self.text_model(**texts)[1]
         image_embeds = self.vision_projection(vision_output)
@@ -91,12 +84,7 @@ class G3(torch.nn.Module):
             torch.matmul(text_embeds_1, image_embeds_1.t()) * logit_scale
         )
         logits_per_images_with_texts = logits_per_texts_with_images.t()
-        if return_loss:
-            loss1 = self.clip_loss(logits_per_texts_with_images)
-
-        loss_phase_1 = None
-        if return_loss:
-            loss_phase_1 = loss1
+        loss_phase_1 = self.clip_loss(logits_per_texts_with_images)
 
         # phase _2
         image_embeds_2 = self.vision_projection_else_2(image_embeds)
@@ -117,8 +105,7 @@ class G3(torch.nn.Module):
         )
         logits_per_images_with_locations = logits_per_locations_with_images.t()
         loss_phase_2 = None
-        if return_loss:
-            loss_phase_2 = self.clip_loss(logits_per_locations_with_images)
+        loss_phase_2 = self.clip_loss(logits_per_locations_with_images)
 
         loss = loss_phase_1 + loss_phase_2
 

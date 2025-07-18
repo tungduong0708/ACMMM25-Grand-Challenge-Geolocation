@@ -1,12 +1,11 @@
-import numpy as np
 import torch
 from torch import nn
-from utils.nn.mlp import MLP
-from utils.nn.rff_mlp import RFFMLP
-from utils.nn.siren import SirenNet
-from utils.pe.projection import Projection
-from utils.pe.projection_rff import ProjectionRFF
-from utils.pe.spherical_harmonics import SphericalHarmonics
+from .nn.mlp import MLP
+from .nn.rff_mlp import RFFMLP
+from .nn.siren import SirenNet
+from .pe.projection import Projection
+from .pe.projection_rff import ProjectionRFF
+from .pe.spherical_harmonics import SphericalHarmonics
 
 
 def get_positional_encoding(positional_encoding_type, hparams, device="cuda"):
@@ -44,7 +43,12 @@ def get_positional_encoding(positional_encoding_type, hparams, device="cuda"):
         raise ValueError(f"Unsupported encoding type: {positional_encoding_type}")
 
 
-def get_neural_network(neural_network_type, input_dim, hparams=None, device="cuda"):
+def get_neural_network(
+    neural_network_type: str,
+    input_dim: int,
+    hparams: dict,
+    device="cuda",
+):
     """
     Returns a neural network module based on the specified network type.
 
@@ -88,10 +92,10 @@ def get_neural_network(neural_network_type, input_dim, hparams=None, device="cud
 class LocationEncoder(nn.Module):
     def __init__(
         self,
-        positional_encoding_type="sh",
-        neural_network_type="siren",
-        hparams=None,
-        device="cuda",
+        positional_encoding_type: str = "sh",
+        neural_network_type: str = "siren",
+        hparams: dict | None = None,
+        device: str = "cuda",
     ):
         super().__init__()
         self.device = device
@@ -101,6 +105,9 @@ class LocationEncoder(nn.Module):
             hparams=hparams,
             device=device,
         )
+
+        if hparams is None:
+            hparams = {}
 
         self.neural_network = nn.ModuleList(
             [

@@ -86,8 +86,8 @@ def extension_from_content_type(content_type: str) -> str:
 def text_search_image(
     query: str,
     num_images: int = 5,
-    api_key: Optional[str] = None,
-    cx: Optional[str] = None,
+    api_key: str | None = None,
+    cx: str | None = None,
     output_dir: str = "g3/data/prompt_data/images",
     start_index: int = 0,
 ) -> list[str]:

@@ -9,6 +9,7 @@ from urllib3.util.retry import Retry
 from PIL import Image
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
+import asyncio
 
 load_dotenv()
 
@@ -88,7 +89,7 @@ def get_gps_from_location(
 
 def calculate_similarity_scores(
         model: nn.Module,
-        device: str,
+        device: torch.device,
         predicted_coords: List[Tuple[float, float]],
         image_dir: Union[str, Path] = "images"
     ) -> np.ndarray:
@@ -149,3 +150,116 @@ def calculate_similarity_scores(
         # Calculate average similarity across all images
         avg_similarities = np.mean(all_similarities, axis=0)
         return avg_similarities
+
+def is_retryable_error(error: Exception) -> bool:
+    """
+    Check if an error is retryable (server errors, connection issues, etc.)
+
+    Args:
+        error (Exception): The exception to check
+
+    Returns:
+        bool: True if the error should be retried, False otherwise
+    """
+    error_str = str(error).lower()
+
+    # Check for various retryable error patterns
+    retryable_patterns = [
+        # Server errors
+        "503",
+        "500",
+        "502",
+        "504",
+        "overloaded",
+        "unavailable",
+        "internal",
+        # Connection errors
+        "disconnected",
+        "connection",
+        "timeout",
+        "remoteprotocolerror",
+        "remote protocol error",
+        # Network errors
+        "network",
+        "socket",
+        "ssl",
+        "tls",
+        # Rate limiting
+        "rate limit",
+        "too many requests",
+        "429",
+        # Service unavailable
+        "service unavailable",
+        "temporarily unavailable",
+    ]
+
+    # Check if any retryable pattern is found in the error string
+    for pattern in retryable_patterns:
+        if pattern in error_str:
+            return True
+
+    # Additional checks for specific error types
+    error_type = type(error).__name__.lower()
+    retryable_error_types = [
+        "connectionerror",
+        "timeout",
+        "httperror",
+        "remoteclosederror",
+        "remoteprotocolerror",
+        "sslerror",
+        "tlserror",
+    ]
+
+    return error_type in retryable_error_types
+
+async def handle_async_api_call_with_retry(
+    api_call_func,
+    max_retries: int = 10,
+    base_delay: float = 2.0,
+    fallback_result: Optional[dict] = None,
+    error_context: str = "API call",
+) -> dict:
+    """
+    Centralized async API call with retry logic for Google API errors.
+
+    Args:
+        api_call_func: Async function to call (should return the API response)
+        max_retries: Maximum number of retry attempts
+        base_delay: Base delay for exponential backoff
+        fallback_result: Result to return if all retries fail
+        error_context: Description of the operation for logging
+
+    Returns:
+        API response or fallback_result if all attempts fail
+    """
+    for attempt in range(max_retries):
+        try:
+            return await api_call_func()
+
+        except Exception as e:
+            error_str = str(e).lower()
+            print(
+                f"{error_context} error (attempt {attempt + 1}/{max_retries}): {e}"
+            )
+
+            # Check if error is retryable using our centralized function
+            if is_retryable_error(e):
+                if attempt < max_retries - 1:  # Don't sleep on the last attempt
+                    delay = base_delay * (2**attempt)  # Exponential backoff
+                    print(f"🔄 Retrying in {delay}s...")
+                    await asyncio.sleep(delay)
+                    continue
+                else:
+                    print(f"❌ Max retries ({max_retries}) exceeded. Giving up.")
+                    break
+            else:
+                print(f"❌ Non-retryable error: {e}")
+                break
+
+    # All attempts failed
+    if fallback_result is not None:
+        print(f"⚠️ Returning fallback result for {error_context}")
+        return fallback_result
+    else:
+        print(f"❌ No fallback available for {error_context}")
+        return {}
