@@ -19,18 +19,18 @@ from google.genai import types
 from google.genai.types import GenerateContentConfig
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from utils.extract_keyframe import extract_keyframes
-from utils.prompt import batch_combine_prompts, location_prompt, verification_prompt
-from utils.video_transcribe import transcribe_video_directory
-from utils.image_search import image_search_directory
-from utils.index_search import search_index_directory, save_results_to_json
-from utils.utils import get_gps_from_location
-from utils.fetch_satellite import fetch_satellite_image
-from utils.fetch_content import fetch_links_to_json
-from utils.text_search import text_search_image, text_search_link
 
-# Import required utilities
-from utils.G3 import G3
+from prompt.prompt import batch_combine_prompts, location_prompt, verification_prompt
+from prompt.preprocess.keyframe_extract import extract_keyframes
+from prompt.preprocess.video_transcribe import transcribe_video_directory
+from prompt.search.image_search import image_search_directory
+from prompt.search.index_search import search_index_directory, save_results_to_json
+from prompt.search.text_search import text_search_image, text_search_link
+from prompt.fetch.satellite_fetch import fetch_satellite_image
+from prompt.fetch.content_fetch import fetch_links_to_json
+
+from utils import get_gps_from_location, calculate_similarity_scores
+from g3.G3 import G3
 
 load_dotenv()
 
@@ -51,37 +51,6 @@ class GPSPrediction(BaseModel):
     analysis: Optional[str] = ""
     references: Optional[List[str]] = []
 
-def is_valid_enhanced_gps_dict(gps_data):
-    """
-    Check if GPS data dict has valid enhanced format with latitude, longitude, location, and evidence.
-    This function is kept for backward compatibility with existing code.
-    """
-    if not isinstance(gps_data, dict):
-        return False
-        
-    required_fields = ["latitude", "longitude", "location", "evidence"]
-    if not all(field in gps_data for field in required_fields):
-        return False
-        
-    # Check if evidence is a list
-    if not isinstance(gps_data["evidence"], list):
-        return False
-    
-    # Check if evidence contains valid analysis and links
-    for item in gps_data["evidence"]:
-        if not isinstance(item, dict):
-            return False
-        if "analysis" not in item:
-            return False
-            
-    try:
-        float(gps_data["latitude"])
-        float(gps_data["longitude"])
-    except (ValueError, TypeError):
-        return False
-        
-    return True
-
 class G3BatchPredictor:
     """
     Batch prediction class for processing all images and videos in a directory.
@@ -97,7 +66,6 @@ class G3BatchPredictor:
         device: str = "cuda", 
         input_dir: str = "g3/data/input_data",
         prompt_dir: str = "g3/data/prompt_data",
-        report_dir: str = "g3/data/report_data", 
         index_path: str = "g3/index/G3.index",
         checkpoint_path: str = "g3/checkpoints/mercator_finetune_weight.pth"
     ):
@@ -361,70 +329,6 @@ class G3BatchPredictor:
         )
         self.__index_search__()
 
-    def calculate_similarity_scores(
-        self,
-        predicted_coords: List[Tuple[float, float]]
-    ) -> np.ndarray:
-        """
-        Calculate similarity scores between images and predicted coordinates.
-
-        Args:
-            rgb_images: List of PIL Images
-            predicted_coords: List of (lat, lon) tuples
-
-        Returns:
-            np.ndarray: Average similarity scores across all images for each coordinate
-        """
-        all_similarities = []
-
-        image_dir = self.image_dir
-        if not image_dir.exists():
-            raise ValueError(f"Image directory does not exist: {image_dir}")
-
-        for image_file in image_dir.glob("*.jpg"):
-            # Load image as PIL Image first
-            pil_image = Image.open(image_file).convert("RGB")
-            
-            # Process the PIL image
-            image = self.model.vision_processor(images=pil_image, return_tensors="pt")[
-                "pixel_values"
-            ].reshape(-1, 224, 224)
-            image = image.unsqueeze(0).to(self.device)
-
-            with torch.no_grad():
-                vision_output = self.model.vision_model(image)[1]
-
-                image_embeds = self.model.vision_projection_else_2(
-                    self.model.vision_projection(vision_output)
-                )
-                image_embeds = image_embeds / image_embeds.norm(
-                    p=2, dim=-1, keepdim=True
-                )  # b, 768
-
-                # Process coordinates
-                gps_batch = torch.tensor(predicted_coords, dtype=torch.float32).to(self.device)
-                gps_input = gps_batch.clone().detach().unsqueeze(0)  # Add batch dimension
-                b, c, _ = gps_input.shape
-                gps_input = gps_input.reshape(b * c, 2)
-                location_embeds = self.model.location_encoder(gps_input)
-                location_embeds = self.model.location_projection_else(
-                    location_embeds.reshape(b * c, -1)
-                )
-                location_embeds = location_embeds / location_embeds.norm(
-                    p=2, dim=-1, keepdim=True
-                )
-                location_embeds = location_embeds.reshape(b, c, -1)  # b, c, 768
-
-                similarity = torch.matmul(
-                    image_embeds.unsqueeze(1), location_embeds.permute(0, 2, 1)
-                )  # b, 1, c
-                similarity = similarity.squeeze(1).cpu().detach().numpy()
-                all_similarities.append(similarity[0])  # Remove batch dimension
-
-        # Calculate average similarity across all images
-        avg_similarities = np.mean(all_similarities, axis=0)
-        return avg_similarities
-
     async def llm_predict(self, model_name: str = "gemini-2.5-pro", n_search: Optional[int] = None, n_coords: Optional[int] = None, image_prediction: bool = True, text_prediction: bool = True) -> dict:
         """
         Generate a prediction using the Gemini LLM with Pydantic structured output.
@@ -529,12 +433,9 @@ class G3BatchPredictor:
                     text_prediction=text_prediction
                 )
 
-                # print(f"Sample {num_sample} result:")
-                # print(json.dumps(prediction, indent=2))  # Commented out verbose output
-
-                if prediction and is_valid_enhanced_gps_dict(prediction):
+                if prediction:
                     coords = (prediction["latitude"], prediction["longitude"])
-                    print(f"✅ Prediction with {num_sample} samples successful: {coords}")
+                    # print(f"✅ Prediction with {num_sample} samples successful: {coords}")
                     return (num_sample, coords, prediction)
                 else:
                     print(f"Invalid or empty prediction format with {num_sample} samples, retrying...")
@@ -560,7 +461,12 @@ class G3BatchPredictor:
             raise ValueError("No valid predictions obtained from any sample size")
 
         # Calculate similarity scores
-        avg_similarities = self.calculate_similarity_scores(predicted_coords=predicted_coords)
+        avg_similarities = calculate_similarity_scores(
+            model=self.model,
+            device=self.device,
+            predicted_coords=predicted_coords,
+            image_dir=self.image_dir
+        )
 
         # Find best prediction
         best_idx = np.argmax(avg_similarities)
@@ -653,9 +559,6 @@ class G3BatchPredictor:
         Returns:
             int: Satellite image ID for reference in prompts
         """
-        if not is_valid_enhanced_gps_dict(prediction):
-            raise ValueError("Invalid prediction format for verification")
-        
         image_dir = self.image_dir
         satellite_image_id = len(list(self.image_dir.glob("image_*.*")))
 
