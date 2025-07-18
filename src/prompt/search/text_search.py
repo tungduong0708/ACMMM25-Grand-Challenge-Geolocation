@@ -2,28 +2,29 @@ import json
 import os
 import re
 import time
-from typing import Optional
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+from typing import Optional
 
 import httpx
-from dotenv import load_dotenv
 import pandas as pd
+from dotenv import load_dotenv
 
 load_dotenv()
+
 
 def retry_request(func, max_retries=3, base_delay=2.0):
     """
     Retry a function with exponential backoff for timeout and connection errors.
-    
+
     Args:
         func: Function to retry
         max_retries: Maximum number of retry attempts
         base_delay: Base delay for exponential backoff
-        
+
     Returns:
         Result of the function call
-        
+
     Raises:
         Last exception if all retries fail
     """
@@ -32,8 +33,10 @@ def retry_request(func, max_retries=3, base_delay=2.0):
             return func()
         except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.TimeoutException) as e:
             if attempt < max_retries - 1:
-                delay = base_delay * (2 ** attempt)
-                print(f"⚠️ Timeout error (attempt {attempt + 1}/{max_retries}). Retrying in {delay}s...")
+                delay = base_delay * (2**attempt)
+                print(
+                    f"⚠️ Timeout error (attempt {attempt + 1}/{max_retries}). Retrying in {delay}s..."
+                )
                 time.sleep(delay)
                 continue
             else:
@@ -42,8 +45,10 @@ def retry_request(func, max_retries=3, base_delay=2.0):
         except httpx.HTTPStatusError as e:
             if e.response.status_code in [500, 502, 503, 504]:
                 if attempt < max_retries - 1:
-                    delay = base_delay * (2 ** attempt)
-                    print(f"⚠️ Server error {e.response.status_code} (attempt {attempt + 1}/{max_retries}). Retrying in {delay}s...")
+                    delay = base_delay * (2**attempt)
+                    print(
+                        f"⚠️ Server error {e.response.status_code} (attempt {attempt + 1}/{max_retries}). Retrying in {delay}s..."
+                    )
                     time.sleep(delay)
                     continue
             print(f"❌ HTTP error {e.response.status_code}: {e}")
@@ -51,9 +56,10 @@ def retry_request(func, max_retries=3, base_delay=2.0):
         except Exception as e:
             print(f"❌ Unexpected error: {e}")
             raise e
-    
+
     # Should never reach here
     raise RuntimeError("Retry logic failed")
+
 
 def extension_from_content_type(content_type: str) -> str:
     # Define allowed image types
@@ -63,25 +69,27 @@ def extension_from_content_type(content_type: str) -> str:
         "image/jpg": "jpg",
         "image/webp": "webp",
         "image/heic": "heic",
-        "image/heif": "heif"
+        "image/heif": "heif",
     }
-    
+
     # Normalize content type (remove charset, etc.)
-    content_type = content_type.split(';')[0].strip().lower()
-    
+    content_type = content_type.split(";")[0].strip().lower()
+
     if content_type in allowed_types:
         return allowed_types[content_type]
     else:
-        raise ValueError(f"Content type '{content_type}' is not supported. Allowed types: {list(allowed_types.keys())}")
+        raise ValueError(
+            f"Content type '{content_type}' is not supported. Allowed types: {list(allowed_types.keys())}"
+        )
 
 
 def text_search_image(
-    query: str, 
-    num_images: int = 5, 
+    query: str,
+    num_images: int = 5,
     api_key: Optional[str] = None,
     cx: Optional[str] = None,
     output_dir: str = "g3/data/prompt_data/images",
-    start_index: int = 0
+    start_index: int = 0,
 ) -> list[str]:
     if not api_key or not cx:
         raise ValueError("GOOGLE_CLOUD_API_KEY or GOOGLE_CSE_CX not set.")
@@ -100,21 +108,21 @@ def text_search_image(
             "num": min(10, num_images - len(downloaded_files)),
             "start": start,
         }
-        
+
         # Use retry logic for the API request
         try:
             response = retry_request(
                 lambda: httpx.get(
-                    "https://customsearch.googleapis.com/customsearch/v1", 
+                    "https://customsearch.googleapis.com/customsearch/v1",
                     params=params,
-                    timeout=30.0  # Increased timeout
+                    timeout=30.0,  # Increased timeout
                 )
             )
             response.raise_for_status()
         except Exception as e:
             print(f"❌ Failed to search for images after retries: {e}")
             break
-            
+
         results = response.json().get("items", [])
 
         if not results:
@@ -127,22 +135,18 @@ def text_search_image(
                 continue
             try:
                 # Use retry logic for image download
-                r = retry_request(
-                    lambda url=img_url: httpx.get(url, timeout=15.0)
-                )
+                r = retry_request(lambda url=img_url: httpx.get(url, timeout=15.0))
                 r.raise_for_status()
                 content_type = r.headers.get("Content-Type", "")
-                
+
                 # Check if content type is supported before processing
                 try:
                     ext = extension_from_content_type(content_type)
                 except ValueError as e:
                     print(f"Skipping {img_url}: {e}")
                     continue
-                    
-                filename = os.path.join(
-                    output_dir, f"image_{idx:03d}.{ext}"
-                )
+
+                filename = os.path.join(output_dir, f"image_{idx:03d}.{ext}")
                 with open(filename, "wb") as f:
                     f.write(r.content)
                 downloaded_files.append(filename)
@@ -158,17 +162,18 @@ def text_search_image(
 
     return downloaded_files
 
+
 def text_search_link(
     query: str,
     output_dir: str = "g3/data/prompt_data",
     filename: str = "text_search.json",
     num_results: int = 10,
     api_key: Optional[str] = None,
-    cx: Optional[str] = None
+    cx: Optional[str] = None,
 ) -> str:
     """
     Search for web links using Google Custom Search API and save results to JSON file.
-    
+
     Args:
         query (str): Search query string
         output_dir (str): Directory to save the results file
@@ -176,10 +181,10 @@ def text_search_link(
         num_results (int): Number of search results to retrieve (max 100)
         api_key (Optional[str]): Google API key, defaults to environment variable
         cx (Optional[str]): Custom Search Engine ID, defaults to environment variable
-        
+
     Returns:
         str: Path to the saved JSON file
-        
+
     Raises:
         ValueError: If API key or CX not provided
         httpx.HTTPError: If API request fails
@@ -188,20 +193,20 @@ def text_search_link(
         api_key = os.getenv("GOOGLE_CLOUD_API_KEY")
     if not cx:
         cx = os.getenv("GOOGLE_CSE_CX")
-        
+
     if not api_key or not cx:
         raise ValueError("GOOGLE_CLOUD_API_KEY or GOOGLE_CSE_CX not set.")
 
     os.makedirs(output_dir, exist_ok=True)
-    
+
     links = []
     start = 1
-    
+
     # Google Custom Search API allows max 10 results per request
     while len(links) < num_results:
         remaining = num_results - len(links)
         current_num = min(10, remaining)
-        
+
         params = {
             "q": query,
             "cx": cx,
@@ -209,18 +214,18 @@ def text_search_link(
             "num": current_num,
             "start": start,
         }
-        
+
         try:
             response = retry_request(
                 lambda: httpx.get(
-                    "https://customsearch.googleapis.com/customsearch/v1", 
+                    "https://customsearch.googleapis.com/customsearch/v1",
                     params=params,
-                    timeout=30.0
+                    timeout=30.0,
                 )
             )
             response.raise_for_status()
             data = response.json()
-            
+
             items = data.get("items", [])
             if not items:
                 print(f"No more results available. Retrieved {len(links)} results.")
@@ -237,43 +242,41 @@ def text_search_link(
         except Exception as e:
             print(f"Error during search: {e}")
             break
-            
+
         start += 10
-    
+
     # Ensure we only take the first num_results links
     links = links[:num_results]
-    
+
     # Prepare final results with metadata
-    search_results = {
-        "query": query,
-        "links": links
-    }
-    
+    search_results = {"query": query, "links": links}
+
     # Save results to JSON file
     output_path = os.path.join(output_dir, filename)
-    with open(output_path, 'w', encoding='utf-8') as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         json.dump(search_results, f, indent=2, ensure_ascii=False)
-    
+
     print(f"✅ Saved {len(links)} search results to: {output_path}")
     return output_path
 
+
 if __name__ == "__main__":
     query = "Video showing a kindergarten celebrating May 9th dressed as soldiers"
-    
+
     # # Test image search
     # print("Testing image search...")
     # images = text_search_image(
-    #     query, 
-    #     num_images=5, 
-    #     api_key=os.getenv("GOOGLE_CLOUD_API_KEY"), 
+    #     query,
+    #     num_images=5,
+    #     api_key=os.getenv("GOOGLE_CLOUD_API_KEY"),
     #     cx=os.getenv("GOOGLE_CSE_CX")
     # )
     # print(f"Downloaded {len(images)} images for query '{query}':")
     # for img in images:
     #     print(img)
-    
-    print("\n" + "="*50 + "\n")
-    
+
+    print("\n" + "=" * 50 + "\n")
+
     # Test link search
     print("Testing link search...")
     links_file = text_search_link(
@@ -282,15 +285,15 @@ if __name__ == "__main__":
         filename="text_search_results.json",
         num_results=10,
         api_key=os.getenv("GOOGLE_CLOUD_API_KEY"),
-        cx=os.getenv("GOOGLE_CSE_CX")
+        cx=os.getenv("GOOGLE_CSE_CX"),
     )
     print(f"Saved search results to: {links_file}")
-    
+
     # Display first few results
-    with open(links_file, 'r', encoding='utf-8') as f:
+    with open(links_file, "r", encoding="utf-8") as f:
         data = json.load(f)
         print(f"\nFound {data['total_results']} results:")
-        for i, result in enumerate(data['results'][:3], 1):
+        for i, result in enumerate(data["results"][:3], 1):
             print(f"{i}. {result['title']}")
             print(f"   {result['link']}")
             print(f"   {result['snippet'][:100]}...")
@@ -299,6 +302,6 @@ if __name__ == "__main__":
         query,
         num_results=5,
         api_key=os.getenv("GOOGLE_CLOUD_API_KEY"),
-        cx=os.getenv("GOOGLE_CSE_CX")
+        cx=os.getenv("GOOGLE_CSE_CX"),
     )
     print(f"Saved search results to: {links}")

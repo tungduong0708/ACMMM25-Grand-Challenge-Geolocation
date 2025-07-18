@@ -48,7 +48,7 @@ def fetch_satellite_image(
     # Retry up to 3 times
     for attempt in range(3):
         print(f"Attempt {attempt + 1}/3 to fetch satellite image...")
-        
+
         # Try descending sizes until success
         size = 1024
         while size >= 128:
@@ -74,7 +74,7 @@ def fetch_satellite_image(
             except Exception as e:
                 print(f"Network error at size {size}: {e}, trying {size // 2}")
                 size //= 2
-        
+
         # If this attempt failed for all sizes, log and continue to next attempt
         if attempt < 2:  # Don't print this message on the last attempt
             print(f"Attempt {attempt + 1} failed for all sizes, retrying...")
