@@ -11,8 +11,6 @@ from open_clip import create_model_and_transforms
 import whisper
 from moviepy import *
 from pathlib import Path
-from Katna.video import Video
-from Katna.writer import KeyFrameDiskWriter
 from typing import Optional, List, Dict, Tuple
 
 
