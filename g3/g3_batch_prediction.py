@@ -5,7 +5,7 @@ import shutil
 import json
 import faiss
 from pathlib import Path
-from typing import List, Set, Dict, Tuple, Optional, Union
+from typing import List, Sequence, Set, Dict, Tuple, Optional
 import pandas as pd
 import numpy as np
 import torch
@@ -16,9 +16,11 @@ from io import BytesIO
 import yaml
 from google import genai
 from google.genai import types
+from google.genai.types import GenerateContentConfig
+from pydantic import BaseModel
 from dotenv import load_dotenv
 from utils.extract_keyframe import extract_keyframes
-from utils.prompt import batch_combine_prompts, location_prompt, verification_prompt, ranking_prompt
+from utils.prompt import batch_combine_prompts, location_prompt, verification_prompt
 from utils.video_transcribe import transcribe_video_directory
 from utils.image_search import image_search_directory
 from utils.index_search import search_index_directory, save_results_to_json
@@ -32,147 +34,52 @@ from utils.G3 import G3
 
 load_dotenv()
 
-def extract_and_parse_json(raw_text: str) -> Union[dict, list]:
-    """
-    Extract JSON content between first { and last } or first [ and last ] and parse it.
-    Returns empty dict if parsing fails to allow retry logic in calling methods.
-    
-    Args:
-        raw_text (str): Raw response text from LLM
-        
-    Returns:
-        Union[dict, list]: Parsed JSON data, or empty dict if parsing fails
-    """
-    # Try to find JSON object first (between { and })
-    first_brace = raw_text.find('{')
-    last_brace = raw_text.rfind('}')
-    
-    # Try to find JSON array (between [ and ])
-    first_bracket = raw_text.find('[')
-    last_bracket = raw_text.rfind(']')
-    
-    json_str = None
-    
-    # Determine which JSON format to use based on what appears first
-    if first_brace != -1 and (first_bracket == -1 or first_brace < first_bracket):
-        # Use JSON object format
-        if first_brace != -1 and last_brace != -1 and first_brace < last_brace:
-            json_str = raw_text[first_brace:last_brace + 1]
-    elif first_bracket != -1 and last_bracket != -1 and first_bracket < last_bracket:
-        # Use JSON array format
-        json_str = raw_text[first_bracket:last_bracket + 1]
-    
-    if not json_str:
-        print(f"⚠️ No valid JSON braces/brackets found in response. Raw text (first 500 chars): {raw_text[:500]}...")
-        return {}
-    
-    try:
-        # Parse JSON
-        parsed_data = json.loads(json_str)
-        return parsed_data
-    except json.JSONDecodeError as e:
-        print(f"⚠️ Failed to parse JSON: {e}. Raw text (first 500 chars): {raw_text[:500]}...")
-        return {}
-    
-def is_valid_enhanced_gps_dict(gps_data):
-        """
-        Check if GPS data dict has valid enhanced format with latitude, longitude, location, and evidence.
-        """
-        if not isinstance(gps_data, dict):
-            return False
-            
-        required_fields = ["latitude", "longitude", "location", "evidence"]
-        if not all(field in gps_data for field in required_fields):
-            return False
-            
-        # Check if evidence is a list
-        if not isinstance(gps_data["evidence"], list):
-            return False
-        
-        # Check if evidence contains valid analysis and links
-        for item in gps_data["evidence"]:
-            if not isinstance(item, dict):
-                return False
-            if "analysis" not in item:
-                return False
-                
-        try:
-            float(gps_data["latitude"])
-            float(gps_data["longitude"])
-        except (ValueError, TypeError):
-            return False
-            
-        return True
+# Pydantic models for structured output
+class Evidence(BaseModel):
+    analysis: str
+    references: Optional[List[str]] = []
 
-def is_valid_ranking_prediction_dict(ranking_data):
+class LocationPrediction(BaseModel):
+    latitude: float
+    longitude: float
+    location: str
+    evidence: List[Evidence]
+
+class GPSPrediction(BaseModel):
+    latitude: float
+    longitude: float
+    analysis: Optional[str] = ""
+    references: Optional[List[str]] = []
+
+def is_valid_enhanced_gps_dict(gps_data):
     """
-    Check if ranking prediction data dict has valid format with best_prediction and all_predictions.
+    Check if GPS data dict has valid enhanced format with latitude, longitude, location, and evidence.
+    This function is kept for backward compatibility with existing code.
     """
-    if not isinstance(ranking_data, dict):
+    if not isinstance(gps_data, dict):
         return False
         
-    # Check for required top-level fields
-    required_fields = ["best_prediction", "all_predictions"]
-    if not all(field in ranking_data for field in required_fields):
+    required_fields = ["latitude", "longitude", "location", "evidence"]
+    if not all(field in gps_data for field in required_fields):
+        return False
+        
+    # Check if evidence is a list
+    if not isinstance(gps_data["evidence"], list):
         return False
     
-    # Validate best_prediction structure
-    best_pred = ranking_data["best_prediction"]
-    if not isinstance(best_pred, dict):
-        return False
-    
-    best_pred_required = ["latitude", "longitude", "location", "score"]
-    if not all(field in best_pred for field in best_pred_required):
-        return False
-    
+    # Check if evidence contains valid analysis and links
+    for item in gps_data["evidence"]:
+        if not isinstance(item, dict):
+            return False
+        if "analysis" not in item:
+            return False
+            
     try:
-        float(best_pred["latitude"])
-        float(best_pred["longitude"])
-        int(best_pred["score"])
+        float(gps_data["latitude"])
+        float(gps_data["longitude"])
     except (ValueError, TypeError):
         return False
-    
-    # Validate all_predictions structure
-    all_preds = ranking_data["all_predictions"]
-    if not isinstance(all_preds, list):
-        return False
-    
-    for pred in all_preds:
-        if not isinstance(pred, dict):
-            return False
         
-        # Check required fields for each prediction
-        pred_required = ["image_prediction", "text_prediction", "score", "breakdown", "prediction"]
-        if not all(field in pred for field in pred_required):
-            return False
-        
-        # Validate modality booleans and score
-        try:
-            bool(pred["image_prediction"])
-            bool(pred["text_prediction"])
-            int(pred["score"])
-        except (ValueError, TypeError):
-            return False
-        
-        # Validate breakdown structure
-        breakdown = pred["breakdown"]
-        if not isinstance(breakdown, dict):
-            return False
-        
-        breakdown_required = ["location_plausibility", "location_name_specificity", "evidence_quality", "modality_use", "justification_clarity"]
-        if not all(field in breakdown for field in breakdown_required):
-            return False
-        
-        try:
-            for field in breakdown_required:
-                int(breakdown[field])
-        except (ValueError, TypeError):
-            return False
-        
-        # Validate prediction structure (reuse existing function)
-        if not is_valid_enhanced_gps_dict(pred["prediction"]):
-            return False
-    
     return True
 
 class G3BatchPredictor:
@@ -187,7 +94,6 @@ class G3BatchPredictor:
 
     def __init__(
         self, 
-        sample_id: str = "sample_001",
         device: str = "cuda", 
         input_dir: str = "g3/data/input_data",
         prompt_dir: str = "g3/data/prompt_data",
@@ -203,25 +109,17 @@ class G3BatchPredictor:
             device (str): Device to run model on ("cuda" or "cpu")
             index_path (str): Path to FAISS index for RAG (required)
         """
-        self.sample_id = sample_id
         self.device = torch.device(device)
         self.checkpoint_path = checkpoint_path
 
-        self.input_dir = Path(input_dir) / self.sample_id
-        self.prompt_dir = Path(prompt_dir) / self.sample_id
-        self.report_dir = Path(report_dir) / self.sample_id
-
-        self.sample_image_dir = self.prompt_dir / "sample_images"
-        self.image_location_image_dir = self.prompt_dir / "image_location_images"
-        self.text_location_image_dir = self.prompt_dir / "text_location_images"
-        self.image_text_location_image_dir = self.prompt_dir / "image_text_location_images"
-
+        self.input_dir = Path(input_dir) 
+        self.prompt_dir = Path(prompt_dir) 
+        self.image_dir = self.prompt_dir / "images"
         self.audio_dir = self.prompt_dir / "audio"
 
         os.makedirs(self.input_dir, exist_ok=True)
         os.makedirs(self.prompt_dir, exist_ok=True)
-        os.makedirs(self.report_dir, exist_ok=True)
-        os.makedirs(self.sample_image_dir, exist_ok=True)
+        os.makedirs(self.image_dir, exist_ok=True)
         os.makedirs(self.audio_dir, exist_ok=True)
 
         # Initialize G3 model
@@ -270,8 +168,7 @@ class G3BatchPredictor:
         Extract keyframes from all videos in the input directory.
         Put all images and keyframes into the prompt directory.
         """
-        output_dir = self.sample_image_dir
-        os.makedirs(output_dir, exist_ok=True)
+        output_dir = self.image_dir
 
         # Determine starting index based on existing files
         current_files = list(output_dir.glob("image_*.*"))
@@ -300,7 +197,6 @@ class G3BatchPredictor:
         Save transcripts into the prompt directory.
         """
         audio_dir = self.audio_dir
-        os.makedirs(audio_dir, exist_ok=True)
 
         if audio_dir.is_dir() and any(audio_dir.iterdir()):
             print(f"🔄 Found existing transcripts in directory: {audio_dir}")
@@ -318,8 +214,7 @@ class G3BatchPredictor:
         Perform image search on all images in the input directory.
         Save search results into the prompt directory.
         """
-        image_dir = self.sample_image_dir
-        os.makedirs(image_dir, exist_ok=True)
+        image_dir = self.image_dir
 
         if self.IMGBB_API_KEY is None:
             raise ValueError("IMGBB_API_KEY environment variable is not set or is None.")
@@ -431,7 +326,7 @@ class G3BatchPredictor:
             model=self.model,
             device=self.device,
             index=self.index,
-            image_dir=str(self.sample_image_dir),
+            image_dir=str(self.image_dir),
             database_csv_path=database_csv_path,
             top_k=20,  # Default top_k value
             max_elements=20  # Default max_elements value
@@ -482,7 +377,7 @@ class G3BatchPredictor:
         """
         all_similarities = []
 
-        image_dir = self.sample_image_dir
+        image_dir = self.image_dir
         if not image_dir.exists():
             raise ValueError(f"Image directory does not exist: {image_dir}")
 
@@ -532,7 +427,7 @@ class G3BatchPredictor:
 
     async def llm_predict(self, model_name: str = "gemini-2.5-pro", n_search: Optional[int] = None, n_coords: Optional[int] = None, image_prediction: bool = True, text_prediction: bool = True) -> dict:
         """
-        Generate a prediction using the Gemini LLM with centralized retry logic.
+        Generate a prediction using the Gemini LLM with Pydantic structured output.
 
         Args:
             model_name: LLM model name to use
@@ -542,7 +437,7 @@ class G3BatchPredictor:
             text_prediction: Whether to use text in prediction
 
         Returns:
-            dict: Parsed JSON prediction response
+            dict: Parsed prediction response
         """
         prompt = batch_combine_prompts(
             prompt_dir=str(self.prompt_dir),
@@ -554,7 +449,7 @@ class G3BatchPredictor:
 
         images = []
         if image_prediction:
-            image_dir = self.sample_image_dir
+            image_dir = self.image_dir
             if not image_dir.exists():
                 raise ValueError(f"Image directory does not exist: {image_dir}")
 
@@ -568,17 +463,6 @@ class G3BatchPredictor:
 
         client = genai.Client(api_key=self.GOOGLE_CLOUD_API_KEY)
 
-        tools = [
-            types.Tool(url_context=types.UrlContext())
-        ]
-
-        config = types.GenerateContentConfig(
-            tools=tools,
-            response_modalities=["TEXT"],
-            temperature=0.1,
-            top_p=0.95,
-        )
-
         async def api_call():
             # Run the synchronous API call in a thread executor to make it truly async
             loop = asyncio.get_event_loop()
@@ -587,20 +471,26 @@ class G3BatchPredictor:
                 lambda: client.models.generate_content(
                     model=model_name,
                     contents=[*images, prompt],
-                    config=config
+                    config=GenerateContentConfig(
+                        tools=[
+                            types.Tool(url_context=types.UrlContext()),
+                        ],
+                        response_mime_type="application/json",
+                        response_schema=LocationPrediction,
+                        temperature=0.1,
+                        top_p=0.95,
+                    )
                 )
             )
 
-            raw_text = response.text.strip() if response.text is not None else ""
-
-            # Extract and parse JSON from response
-            parsed_json = extract_and_parse_json(raw_text)
-            if not parsed_json or not isinstance(parsed_json, dict):  # Empty or wrong type means parsing failed
-                print(f"⚠️ Failed to parse LLM response, returning empty dict for retry")
-                print(f"Raw response (first 1000 chars): {raw_text[:1000]}")
+            # Use the parsed response directly
+            if response.parsed and isinstance(response.parsed, LocationPrediction):
+                return response.parsed.dict()
+            else:
+                print("⚠️ Failed to get valid structured response, returning empty dict for retry")
+                if response.text:
+                    print(f"Raw response (first 1000 chars): {response.text[:1000]}")
                 return {}
-            
-            return parsed_json
 
         return await self.handle_async_api_call_with_retry(
             api_call,
@@ -716,17 +606,6 @@ class G3BatchPredictor:
 
         client = genai.Client(api_key=self.GOOGLE_CLOUD_API_KEY)
 
-        tools = [
-            types.Tool(google_search=types.GoogleSearch())
-        ]
-
-        config = types.GenerateContentConfig(
-            tools=tools,
-            response_modalities=["TEXT"],
-            temperature=0.1,
-            top_p=0.95,
-        )
-
         async def api_call():
             # Run the synchronous API call in a thread executor to make it truly async
             loop = asyncio.get_event_loop()
@@ -735,20 +614,26 @@ class G3BatchPredictor:
                 lambda: client.models.generate_content(
                     model=model_name,
                     contents=[prompt],
-                    config=config
+                    config=GenerateContentConfig(
+                        tools=[
+                            types.Tool(google_search=types.GoogleSearch()),
+                        ],
+                        response_mime_type="application/json",
+                        response_schema=GPSPrediction,
+                        temperature=0.1,
+                        top_p=0.95,
+                    )
                 )
             )
 
-            raw_text = response.text.strip() if response.text is not None else ""
-
-            # Extract and parse JSON from response
-            parsed_json = extract_and_parse_json(raw_text)
-            if not parsed_json or not isinstance(parsed_json, dict):  # Empty or wrong type means parsing failed
-                print(f"⚠️ Failed to parse location response, returning empty dict for retry")
-                print(f"Raw response (first 1000 chars): {raw_text[:1000]}")
+            # Use the parsed response directly
+            if response.parsed and isinstance(response.parsed, GPSPrediction):
+                return response.parsed.dict()
+            else:
+                print("⚠️ Failed to get valid structured location response, returning empty dict for retry")
+                if response.text:
+                    print(f"Raw response (first 1000 chars): {response.text[:1000]}")
                 return {}
-            
-            return parsed_json
 
         return await self.handle_async_api_call_with_retry(
             api_call,
@@ -771,19 +656,9 @@ class G3BatchPredictor:
         if not is_valid_enhanced_gps_dict(prediction):
             raise ValueError("Invalid prediction format for verification")
         
-        if image_prediction and text_prediction:
-            image_dir = self.image_text_location_image_dir
-            os.makedirs(image_dir, exist_ok=True)
-            satellite_image_id = len(list(self.sample_image_dir.glob("image_*.*")))
-        elif image_prediction:
-            image_dir = self.image_location_image_dir
-            os.makedirs(image_dir, exist_ok=True)
-            satellite_image_id = len(list(self.sample_image_dir.glob("image_*.*")))
-        else:
-            image_dir = self.text_location_image_dir
-            os.makedirs(image_dir, exist_ok=True)
-            satellite_image_id = 0
-        
+        image_dir = self.image_dir
+        satellite_image_id = len(list(self.image_dir.glob("image_*.*")))
+
         # Run satellite image fetching and text search in parallel
         async def fetch_satellite_async():
             """Async wrapper for satellite image fetching"""
@@ -846,45 +721,18 @@ class G3BatchPredictor:
             text_prediction=text_prediction
         )
 
-        sample_image_dir = self.sample_image_dir
-        if image_prediction and text_prediction:
-            location_image_dir = self.image_text_location_image_dir
-        elif image_prediction:
-            location_image_dir = self.image_location_image_dir
-        else:
-            location_image_dir = self.text_location_image_dir
-
-        if not sample_image_dir.exists():
-            raise ValueError(f"Image directory does not exist: {sample_image_dir}")
-        if not location_image_dir.exists():
-            raise ValueError(f"Location image directory does not exist: {location_image_dir}")
+        image_dir = self.image_dir
 
         images = []
         if image_prediction:
-            if not sample_image_dir.exists():
-                raise ValueError(f"Image directory does not exist: {sample_image_dir}")
+            if not image_dir.exists():
+                raise ValueError(f"Image directory does not exist: {image_dir}")
 
-            for image_file in sample_image_dir.glob("*.jpg"):
+            for image_file in image_dir.glob("*.jpg"):
                 with open(image_file, "rb") as f:
                     image = types.Part.from_bytes(
                         data=f.read(),
                         mime_type="image/jpeg"
-                    )
-                images.append(image)
-
-        for file_name in os.listdir(location_image_dir):
-            if file_name.lower().endswith(tuple(ext.lower() for ext in self.image_extension)):
-                image_file = location_image_dir / file_name
-                with open(image_file, "rb") as f:
-                    ext = image_file.suffix.lower().lstrip(".")
-                    if ext == "jpg":
-                        mime_type = "image/jpeg"
-                    else:
-                        mime_type = f"image/{ext}"
-                    
-                    image = types.Part.from_bytes(
-                        data=f.read(),
-                        mime_type=mime_type
                     )
                 images.append(image)
 
@@ -899,18 +747,6 @@ class G3BatchPredictor:
 
         client = genai.Client(api_key=self.GOOGLE_CLOUD_API_KEY)
 
-        tools = [
-            # types.Tool(google_search=types.GoogleSearch()),
-            types.Tool(url_context=types.UrlContext())
-        ]
-
-        config = types.GenerateContentConfig(
-            tools=tools,
-            response_modalities=["TEXT"],
-            temperature=0.1,
-            top_p=0.95,
-        )
-
         async def api_call():
             # Run the synchronous API call in a thread executor to make it truly async  
             loop = asyncio.get_event_loop()
@@ -919,19 +755,26 @@ class G3BatchPredictor:
                 lambda: client.models.generate_content(
                     model=model_name,
                     contents=[*images, prompt],
-                    config=config
+                    config=GenerateContentConfig(
+                        tools=[
+                            types.Tool(url_context=types.UrlContext()),
+                        ],
+                        response_mime_type="application/json",
+                        response_schema=LocationPrediction,
+                        temperature=0.1,
+                        top_p=0.95,
+                    )
                 )
             )
             
-            raw_text = response.text.strip() if response.text is not None else ""
-
-            # Extract and parse JSON from response
-            parsed_json = extract_and_parse_json(raw_text)
-            if parsed_json and isinstance(parsed_json, dict) and is_valid_enhanced_gps_dict(parsed_json):
+            # Use the parsed response directly
+            if response.parsed and isinstance(response.parsed, LocationPrediction):
                 print("✅ Verification prediction successful")
-                return parsed_json
+                return response.parsed.dict()
             else:
                 print("⚠️ Invalid or empty verification response format, retrying...")
+                if response.text:
+                    print(f"Raw response (first 1000 chars): {response.text[:1000]}")
                 return {}  # Return empty dict to trigger retry
 
         return await self.handle_async_api_call_with_retry(
@@ -940,7 +783,7 @@ class G3BatchPredictor:
             error_context=f"Verification prediction with {model_name}"
         )
     
-    async def single_predict(
+    async def predict(
         self,
         model_name: str = "gemini-2.5-flash",
         image_prediction: bool = True,
@@ -1027,420 +870,6 @@ class G3BatchPredictor:
         # print(json.dumps(result, indent=2))  # Commented out verbose output
 
         return result
-    
-    async def ranking_predict(
-        self,
-        predictions: List[dict],
-        model_name: str = "gemini-2.5-flash",
-    ) -> dict:
-        """
-        Rank all predictions at once based on their confidence scores.
-
-        Args:
-            predictions (List[dict]): List of prediction dictionaries to rank
-            model_name (str): LLM model name to use
-
-        Returns:
-            dict: Dictionary containing best prediction GPS/location and list of all ranked predictions
-        """
-        if not predictions or len(predictions) == 0:
-            raise ValueError("Predictions list is empty")
-
-        prompt = ranking_prompt(
-            predictions=predictions,
-        )
-        images = []
-        
-        # First add sample images
-        if self.sample_image_dir.exists():
-            for image_file in sorted(self.sample_image_dir.iterdir()):
-                if image_file.is_file() and image_file.suffix.lower() in self.image_extension:
-                    with open(image_file, "rb") as f:
-                        image = types.Part.from_bytes(
-                            data=f.read(),
-                            mime_type="image/jpeg"
-                        )
-                    images.append(image)
-        
-        # Then add location images from each modality in order
-        modality_dirs = [
-            self.image_text_location_image_dir,
-            self.image_location_image_dir,
-            self.text_location_image_dir, 
-        ]
-        
-        for modality_dir in modality_dirs:
-            if modality_dir.exists():
-                for image_file in sorted(modality_dir.iterdir()):
-                    if image_file.is_file() and image_file.suffix.lower() in self.image_extension:
-                        with open(image_file, "rb") as f:
-                            ext = image_file.suffix.lower().lstrip(".")
-                            if ext == "jpg":
-                                mime_type = "image/jpeg"
-                            else:
-                                mime_type = f"image/{ext}"
-                            
-                            image = types.Part.from_bytes(
-                                data=f.read(),
-                                mime_type=mime_type
-                            )
-                        images.append(image)
-
-        tools = [
-            types.Tool(url_context=types.UrlContext())
-        ]
-
-        config = types.GenerateContentConfig(
-            tools=tools,
-            response_modalities=["TEXT"],
-            temperature=0.1,
-            top_p=0.95,
-        )
-
-        client = genai.Client(api_key=self.GOOGLE_CLOUD_API_KEY)
-
-        # Retry logic with exponential backoff
-        max_retries = 10
-        base_delay = 2.0  
-
-        for attempt in range(max_retries):
-            print(f"🔄 Sending batch ranking request to LLM (attempt {attempt + 1}/{max_retries})...")
-            try:
-                # Run the synchronous API call in a thread executor to make it truly async
-                loop = asyncio.get_event_loop()
-                response = await loop.run_in_executor(
-                    None,
-                    lambda: client.models.generate_content(
-                        model=model_name,
-                        contents=[*images, prompt],
-                        config=config
-                    )
-                )
-                
-                raw_text = response.text.strip() if response.text is not None else ""
-
-                # Extract and parse JSON from response
-                parsed_json = extract_and_parse_json(raw_text)
-                if parsed_json and isinstance(parsed_json, dict) and is_valid_ranking_prediction_dict(parsed_json):
-                    all_predictions = parsed_json.get("all_predictions", [])
-                    if len(all_predictions) == len(predictions):
-                        print("✅ Batch ranking prediction successful and validated")
-                        return parsed_json
-                    else:
-                        print(f"Invalid predictions count: expected {len(predictions)}, got {len(all_predictions)}, retrying...")
-                        if attempt < max_retries - 1:  # Don't sleep on the last attempt
-                            await asyncio.sleep(1)  # Brief pause for invalid response format
-                else:
-                    print("Invalid or empty ranking response format (failed validation), retrying...")
-                    if attempt < max_retries - 1:  # Don't sleep on the last attempt
-                        await asyncio.sleep(1)  # Brief pause for invalid response format
-                    
-            except Exception as e:
-                # Check if it's a retryable server error (503 or 500)
-                if ("503" in str(e) or "overloaded" in str(e).lower() or "unavailable" in str(e).lower() or
-                    "500" in str(e) or "internal" in str(e).lower()):
-                    if attempt < max_retries - 1:  # Don't sleep on the last attempt
-                        delay = base_delay * (2 ** attempt)  # Exponential backoff: 1s, 2s, 4s, 8s
-                        print(f"🔄 Ranking model error (attempt {attempt + 1}/{max_retries}). Retrying in {delay}s...")
-                        await asyncio.sleep(delay)
-                        continue
-                    else:
-                        print(f"❌ Max retries ({max_retries}) exceeded for ranking server error. Giving up.")
-                        raise e
-                else:
-                    # For non-retryable errors, short delay and retry
-                    print(f"⚠️ Ranking request failed: {e}, retrying...")
-                    if attempt < max_retries - 1:  # Don't sleep on the last attempt
-                        await asyncio.sleep(1)  # Brief pause for other errors
-        
-        # If we get here, all retries failed
-        raise RuntimeError(f"Ranking prediction failed after {max_retries} attempts")
-
-
-
-    async def predict(
-        self,
-        model_name: str = "gemini-2.5-flash"
-    ) -> dict:
-        """
-        Run the complete prediction pipeline with parallel execution of modalities.
-
-        Args:
-            model_name (str): LLM model name to use
-
-        Returns:
-            dict: Dictionary containing best prediction GPS/location and list of all ranked predictions
-        """
-        modalities = [(True, True), (True, False), (False, True)] # (image, text) combinations
-        
-        # Preprocess input data once for all modalities (includes all image and text preprocessing)
-        print("🔄 Preprocessing input data for all modalities...")
-        await self.preprocess_input_data(image_prediction=True, text_prediction=True)
-        print("✅ Preprocessing completed!")
-        
-        # Create async tasks for all modalities to run in parallel
-        async def run_modality_prediction(image_prediction: bool, text_prediction: bool):
-            print(f"\n🔄 Starting prediction with modalities: Image={image_prediction}, Text={text_prediction}")
-            result = {}
-            result["modalities"] = {
-                "image_prediction": image_prediction,
-                "text_prediction": text_prediction
-            }
-            
-            # Run single predict without preprocessing (already done above)
-            result["prediction"] = await self.single_predict(
-                model_name=model_name,
-                image_prediction=image_prediction,
-                text_prediction=text_prediction
-            )
-            print(f"✅ Completed prediction for modalities: Image={image_prediction}, Text={text_prediction}")
-            return result
-        
-        # Run all modality predictions concurrently
-        print("🚀 Running all 3 modality predictions in parallel...")
-        tasks = [
-            run_modality_prediction(image_pred, text_pred) 
-            for image_pred, text_pred in modalities
-        ]
-        
-        # Wait for all predictions to complete
-        results = await atqdm.gather(*tasks, desc="🔄 Processing modality predictions")
-        
-        print("✅ All modality predictions completed!")
-        for result in results:
-            print(f"📊 Result summary: {result['modalities']} -> {result['prediction'].get('location', 'N/A')}")
-
-        # Rank all predictions at once for better comparative analysis
-        print("🔄 Processing all predictions for ranking...")
-        ranked_results = await self.ranking_predict(
-            predictions=results,
-            model_name=model_name
-        )
-        
-        print(f"Best prediction: {ranked_results['best_prediction']}")
-        print(f"Total predictions ranked: {len(ranked_results['all_predictions'])}")
-
-        return ranked_results
-    
-    def save_predictions_to_json(
-        self,
-        predictions: dict
-    ) -> None:
-        """
-        Save a single prediction result to a JSON file.
-
-        Args:
-            prediction (dict): The prediction result to save
-        """
-        # Create report images directory
-        report_images_dir = self.report_dir / "images"
-        os.makedirs(report_images_dir, exist_ok=True)
-        
-        image_mapping = {}
-        all_dirs = [
-            ("sample", self.sample_image_dir),
-            ("image_text", self.image_text_location_image_dir),
-            ("image", self.image_location_image_dir),
-            ("text", self.text_location_image_dir), 
-        ]
-
-        num_sample_images = len(list(self.sample_image_dir.glob("image_*.*"))) - 1
-        final_sample_image_name = f"image_{num_sample_images:03d}.jpg"
-        sample_images = set()
-        for prediction in predictions["all_predictions"]:
-            if prediction["image_prediction"] and prediction["text_prediction"]:
-                modality_name = "image_text"
-            elif prediction["image_prediction"]:
-                modality_name = "image"
-            else:
-                modality_name = "text"
-
-            if modality_name not in image_mapping:
-                image_mapping[modality_name] = {} 
-
-            evidence_list = prediction["prediction"].get("evidence", [])
-            for evidence in evidence_list:
-                reference_list = evidence.get("references", [])
-                for i, reference in enumerate(reference_list):
-                    if isinstance(reference, str) and reference.startswith("image"):
-                        if modality_name == "text":
-                            image_mapping[modality_name][reference] = reference 
-                        elif reference > final_sample_image_name:
-                            image_mapping[modality_name][reference] = reference 
-                        else:
-                            sample_images.add(reference)
-        image_mapping["sample"] = {img: img for img in sample_images}
-
-        image_counter = 0
-        for modality_name, source_dir in all_dirs:
-            if source_dir.exists():
-                old_image_list = set(image_mapping.get(modality_name, {}).keys()) 
-                for image_file in sorted(source_dir.iterdir()):
-                    image_name = os.path.splitext(image_file.name)[0] + ".jpg"
-                    if image_file.is_file() and image_file.suffix.lower() in self.image_extension and image_name in old_image_list:
-                        old_image_name = image_name
-                        new_image_name = f"image_{image_counter:03d}.jpg"
-                        image_mapping[modality_name][old_image_name] = new_image_name
-
-                        dest_path = report_images_dir / new_image_name
-                        shutil.copy2(image_file, dest_path)
-                        image_counter += 1
-
-        print(f"📸 Copied {image_counter} images to report directory: {report_images_dir}")
-        # Update image references in predictions
-        for prediction in predictions["all_predictions"]:
-            if prediction["image_prediction"] and prediction["text_prediction"]:
-                modality_name = "image_text"
-            elif prediction["image_prediction"]:
-                modality_name = "image"
-            else:
-                modality_name = "text"
-
-            evidence_list = prediction["prediction"].get("evidence", [])
-            for evidence in evidence_list:
-                reference_list = evidence.get("references", [])
-                for i, reference in enumerate(reference_list):
-                    if isinstance(reference, str) and reference.startswith("image"):
-                        if modality_name == "text":
-                            if reference in image_mapping["sample"]:
-                                reference_list[i] = image_mapping["sample"][reference]
-                        elif reference > final_sample_image_name:
-                            if modality_name in image_mapping and reference in image_mapping[modality_name]:
-                                reference_list[i] = image_mapping[modality_name][reference]
-                        else:
-                            if reference in image_mapping["sample"]:
-                                reference_list[i] = image_mapping["sample"][reference]
-                        
-
-        # Save JSON report
-        json_report_path = self.report_dir / f"{self.sample_id}_prediction_result.json"
-        with open(json_report_path, 'w', encoding='utf-8') as f:
-            json.dump(predictions, f, indent=2, ensure_ascii=False)
-        print(f"📄 JSON report saved: {json_report_path}")
-
-    async def generate_markdown_report(
-        self,
-        predictions: dict,
-        model_name: str = "gemini-2.5-flash"
-    ) -> str:
-        """
-        Generate a markdown report from multiple prediction results and copy images to report directory.
-
-        Args:
-            predictions (List[dict]): List of prediction dictionaries from different modalities
-            model_name (str): LLM model name to use for report generation
-
-        Returns:
-            str: Path to the generated markdown report file
-        """
-        self.save_predictions_to_json(predictions)
-        
-        # Simple prompt - just display everything in the dict
-        prompt = f"""
-Generate a comprehensive markdown report analyzing geolocation predictions from multiple modalities.
-
-Prediction data:
-{json.dumps(predictions, indent=2)}
-
-Instructions:
-- Display all information from the prediction data
-- If there are images mentioned, display them using ![Description](./images/image_XX.jpg) format
-- If there are links in references, cite them properly
-- Create a professional, detailed analysis of all modality predictions
-- Include sections for Executive Summary, Modality Analysis, Best Prediction, Evidence Analysis, and References
-
-Generate a beautiful markdown report that comprehensively covers all the prediction data.
-"""
-
-        print("🔄 Generating comprehensive markdown report...")
-        # print(prompt)
-
-        client = genai.Client(api_key=self.GOOGLE_CLOUD_API_KEY)
-
-        config = types.GenerateContentConfig(
-            response_modalities=["TEXT"],
-            temperature=0.3,
-            top_p=0.9,
-        )
-
-        # Retry logic with exponential backoff
-        max_retries = 10
-        base_delay = 2.0  
-        
-        for attempt in range(max_retries):
-            print(f"🔄 Generating markdown report (attempt {attempt + 1}/{max_retries})...")
-            try:
-                # Run the synchronous API call in a thread executor to make it truly async
-                loop = asyncio.get_event_loop()
-                response = await loop.run_in_executor(
-                    None,
-                    lambda: client.models.generate_content(
-                        model=model_name,
-                        contents=[prompt],
-                        config=config
-                    )
-                )
-                break  # Exit loop if successful
-                
-            except Exception as e:
-                # Check if it's a retryable server error (503 or 500)
-                if ("503" in str(e) or "overloaded" in str(e).lower() or "unavailable" in str(e).lower() or
-                    "500" in str(e) or "internal" in str(e).lower()):
-                    if attempt < max_retries - 1:  # Don't sleep on the last attempt
-                        delay = base_delay * (2 ** attempt)  # Exponential backoff: 1s, 2s, 4s, 8s
-                        print(f"🔄 Markdown generation model error (attempt {attempt + 1}/{max_retries}). Retrying in {delay}s...")
-                        await asyncio.sleep(delay)
-                        continue
-                    else:
-                        print(f"❌ Max retries ({max_retries}) exceeded for markdown generation server error. Giving up.")
-                        raise e
-                else:
-                    # For non-retryable errors, short delay and retry
-                    print(f"⚠️ Markdown generation request failed: {e}, retrying...")
-                    if attempt < max_retries - 1:  # Don't sleep on the last attempt
-                        await asyncio.sleep(1)  # Brief pause for other errors
-        else:
-            # If we get here, all retries failed
-            raise RuntimeError(f"Markdown generation failed after {max_retries} attempts")
-        
-        raw_text = response.text.strip() if response.text is not None else ""
-        
-        # Save markdown report
-        report_path = self.report_dir / f"{self.sample_id}_geolocation_report.md"
-        with open(report_path, 'w', encoding='utf-8') as f:
-            f.write(raw_text)
-        
-        print(f"📄 Markdown report generated: {report_path}")
-        return str(report_path)
-
-    async def generate_comprehensive_report(
-        self,
-        predictions: dict,
-        model_name: str = "gemini-2.5-flash"
-    ) -> Dict[str, str]:
-        """
-        Generate both JSON and markdown reports from multiple prediction results.
-
-        Args:
-            predictions (List[dict]): List of prediction dictionaries from different modalities
-            model_name (str): LLM model name to use for report generation
-
-        Returns:
-            dict: Dictionary with paths to generated report files
-        """
-        # Generate markdown report
-        markdown_report_path = await self.generate_markdown_report(predictions, model_name)
-        
-        report_paths = {
-            "markdown_report": markdown_report_path,
-            "images_directory": str(self.report_dir / "images")
-        }
-        
-        print(f"📋 Comprehensive reports generated:")
-        print(f"   Markdown: {markdown_report_path}")
-        print(f"   Images: {self.report_dir / 'images'}")
-        
-        return report_paths
 
     def is_retryable_error(self, error: Exception) -> bool:
         """
@@ -1488,72 +917,6 @@ Generate a beautiful markdown report that comprehensively covers all the predict
         ]
         
         return error_type in retryable_error_types
-
-    # async def handle_llm_request_with_retry(
-    #     self,
-    #     request_func,
-    #     request_name: str,
-    #     max_retries: int = 10,
-    #     base_delay: float = 2.0,
-    #     fallback_result: Optional[dict] = None
-    # ) -> dict:
-    #     """
-    #     Handle LLM requests with centralized retry logic and error handling.
-        
-    #     Args:
-    #         request_func: Async function that makes the LLM request
-    #         request_name (str): Name of the request for logging
-    #         max_retries (int): Maximum number of retry attempts
-    #         base_delay (float): Base delay for exponential backoff
-    #         fallback_result (dict): Fallback result if all retries fail (optional)
-            
-    #     Returns:
-    #         dict: LLM response or fallback result if all attempts fail
-    #     """
-        
-    #     for attempt in range(max_retries):
-    #         try:
-    #             result = await request_func()
-    #             if result:  # If we got a valid result
-    #                 return result
-    #             else:
-    #                 print(f"⚠️ Empty {request_name} response on attempt {attempt + 1}")
-    #                 if attempt >= max_retries - 1 and fallback_result:
-    #                     print(f"⚠️ Creating fallback {request_name} result")
-    #                     return fallback_result
-    #                 elif attempt < max_retries - 1:
-    #                     await asyncio.sleep(1)  # Brief pause for empty responses
-                        
-    #         except Exception as e:
-    #             if self.is_retryable_error(e):
-    #                 if attempt < max_retries - 1:  # Don't sleep on the last attempt
-    #                     delay = base_delay * (2 ** attempt)  # Exponential backoff: 2s, 4s, 8s, 16s
-    #                     print(f"🔄 {request_name} retryable error (attempt {attempt + 1}/{max_retries}). Retrying in {delay}s...")
-    #                     print(f"   Error: {str(e)[:200]}...")
-    #                     await asyncio.sleep(delay)
-    #                     continue
-    #                 else:
-    #                     print(f"❌ Max retries ({max_retries}) exceeded for {request_name} retryable error.")
-    #                     if fallback_result:
-    #                         print(f"⚠️ Creating fallback {request_name} result due to repeated errors")
-    #                         return fallback_result
-    #                     else:
-    #                         raise e
-    #             else:
-    #                 # For non-retryable errors, raise immediately
-    #                 print(f"❌ Non-retryable error in {request_name}: {str(e)[:200]}...")
-    #                 if fallback_result:
-    #                     print(f"⚠️ Creating fallback {request_name} result due to non-retryable error")
-    #                     return fallback_result
-    #                 else:
-    #                     raise e
-        
-        # # This should only be reached if all retries failed without exceptions
-        # if fallback_result:
-        #     print(f"⚠️ All {request_name} attempts failed, using fallback result")
-        #     return fallback_result
-        # else:
-        #     raise RuntimeError(f"{request_name} failed after {max_retries} attempts")
 
     async def handle_async_api_call_with_retry(
         self, 
@@ -1659,12 +1022,10 @@ if __name__ == "__main__":
     async def main():
         try:
             print(f"🚀 Starting G3 Batch Predictor in {args.mode} mode...")
-            print(f"📁 Sample ID: {args.sample_id}")
             print(f"🎯 Model: {args.model_name}")
             
             # Initialize predictor
             predictor = G3BatchPredictor(
-                sample_id=args.sample_id,
                 device="cuda" if torch.cuda.is_available() else "cpu",
                 checkpoint_path=args.checkpoint_path,
                 index_path=args.index_path
@@ -1675,16 +1036,6 @@ if __name__ == "__main__":
             result = await predictor.predict(model_name=args.model_name)
 
             print(json.dumps(result, indent=2))
-
-            # Generate comprehensive reports if requested
-            if args.generate_report:
-                print("\n📋 Generating comprehensive reports...")
-                report_paths = await predictor.generate_comprehensive_report(
-                    predictions=result,  # Pass the full result dict instead of just all_predictions
-                    model_name=args.model_name
-                )
-                print(f"\n📄 Reports generated successfully!")
-
             print("\n🎉 Multi-modal prediction completed successfully!")
 
         except Exception as e:
