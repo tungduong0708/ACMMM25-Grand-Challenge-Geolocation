@@ -13,9 +13,13 @@ from google.genai import types
 from pydantic import BaseModel
 from dotenv import dotenv_values
 
-from prompt.prompt import batch_combine_prompts, location_prompt, verification_prompt
+from prompt import diversification_prompt, location_prompt, verification_prompt
 
-from utils import get_gps_from_location, calculate_similarity_scores, handle_async_api_call_with_retry
+from utils import (
+    get_gps_from_location,
+    calculate_similarity_scores,
+    handle_async_api_call_with_retry,
+)
 from data_processor import DataProcessor
 from g3.G3 import G3
 
@@ -24,17 +28,20 @@ class Evidence(BaseModel):
     analysis: str
     references: Optional[List[str]] = []
 
+
 class LocationPrediction(BaseModel):
     latitude: float
     longitude: float
     location: str
     evidence: List[Evidence]
 
+
 class GPSPrediction(BaseModel):
     latitude: float
     longitude: float
     analysis: Optional[str] = ""
     references: Optional[List[str]] = []
+
 
 class G3BatchPredictor:
     """
@@ -49,10 +56,11 @@ class G3BatchPredictor:
     def __init__(
         self,
         device: str = "cuda",
-        input_dir: str = "g3/data/input_data",
-        prompt_dir: str = "g3/data/prompt_data",
-        index_path: str = "g3/index/G3.index",
-        checkpoint_path: str = "g3/checkpoints/mercator_finetune_weight.pth",
+        input_dir: str = "data/input_data",
+        prompt_dir: str = "data/prompt_data",
+        index_path: str = "data/index/G3.index",
+        database_csv_path: str = "data/dataset/mp16/MP16_Pro_filtered.csv",
+        checkpoint_path: str = "data/checkpoints/mercator_finetune_weight.pth",
     ):
         """
         Initialize the BatchKeyframePredictor.
@@ -64,10 +72,11 @@ class G3BatchPredictor:
         """
         self.env = dotenv_values(".env")
         self.device = torch.device(device)
-        self.checkpoint_path = checkpoint_path
+        self.base_path = Path(__file__).parent
+        self.checkpoint_path = self.base_path / checkpoint_path
 
-        self.input_dir = Path(input_dir)
-        self.prompt_dir = Path(prompt_dir)
+        self.input_dir = self.base_path / input_dir
+        self.prompt_dir = self.base_path / prompt_dir
         self.image_dir = self.prompt_dir / "images"
         self.audio_dir = self.prompt_dir / "audio"
 
@@ -77,8 +86,7 @@ class G3BatchPredictor:
         os.makedirs(self.audio_dir, exist_ok=True)
 
         # Initialize G3 model
-        base_path = Path(__file__).parent
-        hparams = yaml.safe_load(open(base_path / "hparams.yaml", "r"))
+        hparams = yaml.safe_load(open(self.base_path / "g3/hparams.yaml", "r"))
         pe = "projection_mercator"
         nn = "rffmlp"
 
@@ -88,7 +96,7 @@ class G3BatchPredictor:
             neural_network_type=nn,
             hparams=hparams[f"{pe}_{nn}"],
         )
-        self.__load_checkpoint__()
+        self.__load_checkpoint()
 
         self.data_processor = DataProcessor(
             model=self.model,
@@ -96,7 +104,8 @@ class G3BatchPredictor:
             prompt_dir=self.prompt_dir,
             image_dir=self.image_dir,
             audio_dir=self.audio_dir,
-            index_path=Path(index_path),
+            index_path=self.base_path / index_path,
+            database_csv_path=self.base_path / database_csv_path,
             device=self.device,
         )
 
@@ -116,7 +125,7 @@ class G3BatchPredictor:
             ".mkv",
         }
 
-    def __load_checkpoint__(self):
+    def __load_checkpoint(self):
         """
         Load the G3 model checkpoint.
         """
@@ -154,7 +163,7 @@ class G3BatchPredictor:
         Returns:
             dict: Parsed prediction response
         """
-        prompt = batch_combine_prompts(
+        prompt = diversification_prompt(
             prompt_dir=str(self.prompt_dir),
             n_coords=n_coords,
             n_search=n_search,
@@ -187,13 +196,13 @@ class G3BatchPredictor:
                         tools=[
                             types.Tool(url_context=types.UrlContext()),
                         ],
-                        response_mime_type="application/json",
-                        response_schema=LocationPrediction,
                         temperature=0.1,
                         top_p=0.95,
                     ),
                 ),
             )
+
+            print(response.text)
 
             # Use the parsed response directly
             if response.parsed and isinstance(response.parsed, LocationPrediction):
@@ -242,6 +251,8 @@ class G3BatchPredictor:
                     image_prediction=image_prediction,
                     text_prediction=text_prediction,
                 )
+
+                print(prediction)
 
                 if prediction:
                     coords = (prediction["latitude"], prediction["longitude"])
@@ -336,8 +347,6 @@ class G3BatchPredictor:
                         tools=[
                             types.Tool(google_search=types.GoogleSearch()),
                         ],
-                        response_mime_type="application/json",
-                        response_schema=GPSPrediction,
                         temperature=0.1,
                         top_p=0.95,
                     ),
@@ -420,8 +429,6 @@ class G3BatchPredictor:
                         tools=[
                             types.Tool(url_context=types.UrlContext()),
                         ],
-                        response_mime_type="application/json",
-                        response_schema=LocationPrediction,
                         temperature=0.1,
                         top_p=0.95,
                     ),
@@ -463,7 +470,8 @@ class G3BatchPredictor:
         Returns:
             dict: Final prediction with latitude, longitude, location, reason, and evidence
         """
-
+        print(f"🚀 Starting multi-modal prediction pipeline with model: {model_name}")
+        # await self.data_processor.preprocess_input_data()
         # Step 1: Run diversification prediction (this is already parallel internally)
         print(
             f"\n🔄 Running diversification prediction for Image={image_prediction}, Text={text_prediction}..."
@@ -496,7 +504,7 @@ class G3BatchPredictor:
             return verification_input
 
         # Run location prediction and verification preparation in parallel
-        print(f"\n🔄 Running location prediction and verification prep in parallel...")
+        print("\n🔄 Running location prediction and verification prep in parallel...")
         location_prediction, verification_input = await asyncio.gather(
             run_location_prediction(), prepare_for_verification()
         )
@@ -551,61 +559,24 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="G3 Batch Predictor Test")
-    parser.add_argument(
-        "--sample_id", type=str, default="ID243", help="Sample ID for data organization"
-    )
-    parser.add_argument(
-        "--checkpoint_path",
-        type=str,
-        default="g3/checkpoints/mercator_finetune_weight.pth",
-        help="Path to G3 model checkpoint",
-    )
-    parser.add_argument(
-        "--index_path",
-        type=str,
-        default="g3/index/G3.index",
-        help="Path to FAISS index for RAG",
-    )
-    parser.add_argument(
-        "--model_name", type=str, default="gemini-2.5-pro", help="LLM model name to use"
-    )
-    parser.add_argument(
-        "--mode",
-        type=str,
-        default="diversification",
-        choices=["diversification"],
-        help="Prediction mode: diversification (multiple predictions from 3 modalities with similarity scoring)",
-    )
-    parser.add_argument(
-        "--output_file",
-        type=str,
-        default="batch_prediction_result.json",
-        help="Output file to save prediction result",
-    )
-    parser.add_argument(
-        "--generate_report",
-        action="store_true",
-        help="Generate comprehensive markdown and JSON reports after prediction",
-    )
 
     args = parser.parse_args()
 
     async def main():
         try:
-            print(f"🚀 Starting G3 Batch Predictor in {args.mode} mode...")
-            print(f"🎯 Model: {args.model_name}")
+            print("🚀 Starting G3 Batch Predictor...")
 
             # Initialize predictor
             predictor = G3BatchPredictor(
-                device="cuda" if torch.cuda.is_available() else "cpu",
-                checkpoint_path=args.checkpoint_path,
-                index_path=args.index_path,
+                device="cuda" if torch.cuda.is_available() else "cpu"
             )
 
             # Run prediction - always use the predict method for 3 modalities
             print("\n🔄 Running complete multi-modal prediction pipeline...")
-            result = await predictor.predict(model_name=args.model_name)
+            result = await predictor.predict(model_name="gemini-2.5-pro")
 
+            with open("g3_batch_prediction_result.json", "w") as f:
+                json.dump(result, f, indent=2)
             print(json.dumps(result, indent=2))
             print("\n🎉 Multi-modal prediction completed successfully!")
 

@@ -8,17 +8,17 @@ DIVERSIFICATION_PROMPT = """
 
     Respond with **only** the following JSON structure (no extra text, markdown, or comments):
 
-    {
+    {{
         "latitude": float,
         "longitude": float,
         "location": string,
         "evidence": [
-            {
+            {{
                 "analysis": string,
                 "references": [string, …]
-            }
+            }}
         ]
-    }
+    }}
 
     **Guidelines:**
     - One entry per clue (visual and textual).  
@@ -46,12 +46,12 @@ LOCATION_PROMPT = """
 
     Return your answer in the following JSON format:
 
-    {
+    {{
       "latitude": float,
       "longitude": float,
       "analysis": "Describe how the coordinates were identified or approximated, including any visual or textual clues used.",
       "references": ["URL1", "URL2", ...]
-    }
+    }}
 
     - The "analysis" must clearly explain the reasoning behind the chosen coordinates.
     - The "references" list must include all URLs cited in the analysis.
@@ -68,17 +68,17 @@ VERIFICATION_PROMPT = """
 
     Guidelines:
     1. Output only a JSON object with these fields:
-    {
+    {{
         "latitude": float,
         "longitude": float,
         "location": string,
         "evidence": [
-            {
+            {{
                 "analysis": string,
                 "references": [string, …]
-            }
+            }}
         ]
-    }
+    }}
 
     2. Images are named “image_{{idx:03d}}.jpg”:
     - Images up to “image_{satellite_image_id}.jpg” were used to generate the prediction.

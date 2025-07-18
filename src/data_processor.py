@@ -10,14 +10,14 @@ from dotenv import dotenv_values
 from PIL import Image
 from torch import nn
 
-from .prompt.fetch.content_fetch import fetch_links_to_json
-from .prompt.fetch.satellite_fetch import fetch_satellite_image
-from .prompt.preprocess.keyframe_extract import extract_keyframes
-from .prompt.preprocess.video_transcribe import transcribe_video_directory
-from .prompt.search.text_search import text_search_image
-from .prompt.search.image_search import image_search_directory
-from .prompt.search.index_search import save_results_to_json, search_index_directory
-from .prompt.search.text_search import text_search_link
+from prompt.fetch.content_fetch import fetch_links_to_json
+from prompt.fetch.satellite_fetch import fetch_satellite_image
+from prompt.preprocess.keyframe_extract import extract_keyframes
+from prompt.preprocess.video_transcribe import transcribe_video_directory
+from prompt.search.text_search import text_search_image
+from prompt.search.image_search import image_search_directory
+from prompt.search.index_search import save_results_to_json, search_index_directory
+from prompt.search.text_search import text_search_link
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +31,7 @@ class DataProcessor:
         image_dir: Path,
         audio_dir: Path,
         index_path: Path,
+        database_csv_path: Path,
         device: torch.device,
     ):
         self.input_dir = input_dir
@@ -39,9 +40,10 @@ class DataProcessor:
         self.audio_dir = audio_dir
         self.model = model
         self.device = device
+        self.database_csv_path = database_csv_path
 
         try:
-            self.index = faiss.read_index(index_path)
+            self.index = faiss.read_index(str(index_path))
             logger.info(f"✅ Successfully loaded FAISS index from: {index_path}")
         except Exception as e:
             raise RuntimeError(f"Failed to load FAISS index from {index_path}: {e}")
@@ -63,25 +65,6 @@ class DataProcessor:
         }
 
         self.env = dotenv_values(".env")
-
-        metadata_dest = self.prompt_dir / "metadata.json"
-        if not metadata_dest.exists():
-            for file in os.listdir(self.input_dir):
-                if file.endswith(".json"):
-                    file_path = os.path.join(self.input_dir, file)
-                    with open(file_path, "r") as src_file:
-                        with open(metadata_dest, "w") as dest_file:
-                            dest_file.write(src_file.read())
-                    break
-
-        self.__extract_keyframes()
-        self.__transcribe_videos()
-        asyncio.gather(
-            self.__fetch_related_link_content(
-                image_prediction=True, text_prediction=True
-            )
-        )
-        self.__index_search()
 
     def __extract_keyframes(self):
         """
@@ -244,18 +227,19 @@ class DataProcessor:
             )
             return
 
-        database_csv_path = "g3/data/mp16/MP16_Pro_filtered.csv"
-        if not os.path.exists(database_csv_path):
-            raise FileNotFoundError(f"Database CSV file not found: {database_csv_path}")
+        if not os.path.exists(self.database_csv_path):
+            raise FileNotFoundError(
+                f"Database CSV file not found: {self.database_csv_path}"
+            )
 
         candidates_gps, reverse_gps = search_index_directory(
             model=self.model,
             device=self.device,
             index=self.index,
             image_dir=str(self.image_dir),
-            database_csv_path=database_csv_path,
-            top_k=20,  # Default top_k value
-            max_elements=20,  # Default max_elements value
+            database_csv_path=str(self.database_csv_path),
+            top_k=20,
+            max_elements=20,
         )
 
         save_results_to_json(candidates_gps, reverse_gps, str(output_path))

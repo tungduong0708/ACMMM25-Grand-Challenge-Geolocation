@@ -115,7 +115,11 @@ def transcribe_video_directory(
     """
     video_extensions = {".mp4", ".avi", ".mov", ".mkv"}
     os.makedirs(output_dir, exist_ok=True)
-    video_files = list(Path(video_dir).glob(f"*{'|'.join(video_extensions)}"))
+    
+    video_files = [
+        f for f in Path(video_dir).glob("*")
+        if f.is_file() and f.suffix.lower() in video_extensions
+    ]
 
     if not video_files:
         print(f"No video files found in directory: {video_dir}")
