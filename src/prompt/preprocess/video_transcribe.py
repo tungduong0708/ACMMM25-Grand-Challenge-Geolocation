@@ -1,17 +1,17 @@
+import logging
 import os
+import shutil
+import tempfile
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
 import cv2
 import numpy as np
-from pathlib import Path
-import logging
-import tempfile
-import shutil
+import torch
 import torchvision.transforms as T
-import torch 
-from open_clip import create_model_and_transforms
 import whisper
 from moviepy import *
-from pathlib import Path
-from typing import Optional, List, Dict, Tuple
+from open_clip import create_model_and_transforms
 
 
 def extract_audio(video_path: str, output_dir: str) -> str:
@@ -46,6 +46,7 @@ def extract_audio(video_path: str, output_dir: str) -> str:
         print(f"Error extracting audio: {str(e)}")
         return ""
 
+
 def transcribe_audio(audio_path: str, model_name: str = "base") -> str:
     """
     Transcribe audio using Whisper.
@@ -65,7 +66,12 @@ def transcribe_audio(audio_path: str, model_name: str = "base") -> str:
     except Exception as e:
         raise RuntimeError(f"Error transcribing audio: {str(e)}")
 
-def transcribe_video(video_path: str, output_dir: str = "g3/data/prompt_data/audio", model_name: str = "base"):
+
+def transcribe_video(
+    video_path: str,
+    output_dir: str = "g3/data/prompt_data/audio",
+    model_name: str = "base",
+):
     """
     Transcribe video by extracting audio and then transcribing it.
 
@@ -81,7 +87,7 @@ def transcribe_video(video_path: str, output_dir: str = "g3/data/prompt_data/aud
     if not audio_path:
         print("Audio extraction failed. No audio file created.")
         return
-        
+
     print(f"Audio extracted to: {audio_path}")
     transcript_text = transcribe_audio(audio_path, model_name=model_name)
 
@@ -90,7 +96,12 @@ def transcribe_video(video_path: str, output_dir: str = "g3/data/prompt_data/aud
         f.write(transcript_text)
     print(f"Transcript saved to: {transcript_path}")
 
-def transcribe_video_directory(video_dir: str, output_dir: str = "g3/data/prompt_data/audio", model_name: str = "base"):
+
+def transcribe_video_directory(
+    video_dir: str,
+    output_dir: str = "g3/data/prompt_data/audio",
+    model_name: str = "base",
+):
     """
     Transcribe all videos in a directory.
 
@@ -102,7 +113,7 @@ def transcribe_video_directory(video_dir: str, output_dir: str = "g3/data/prompt
     Returns:
         None
     """
-    video_extensions = {'.mp4', '.avi', '.mov', '.mkv'}
+    video_extensions = {".mp4", ".avi", ".mov", ".mkv"}
     os.makedirs(output_dir, exist_ok=True)
     video_files = list(Path(video_dir).glob(f"*{'|'.join(video_extensions)}"))
 
@@ -112,6 +123,7 @@ def transcribe_video_directory(video_dir: str, output_dir: str = "g3/data/prompt
     for video_file in video_files:
         print(f"Processing video: {video_file}")
         transcribe_video(str(video_file), output_dir, model_name=model_name)
+
 
 if __name__ == "__main__":
     import sys
@@ -125,10 +137,10 @@ if __name__ == "__main__":
 
     if not os.path.exists(video_path):
         print(f"Error: Video file '{video_path}' not found!")
-        sys.exit(1)    
+        sys.exit(1)
     print(f"Processing video: {video_path}")
     print("=" * 60)
-    
+
     output_dir = "g3/data/prompt_data/audio"
     os.makedirs(output_dir, exist_ok=True)
 
@@ -146,7 +158,9 @@ if __name__ == "__main__":
             print("📝 Transcribing audio...")
             transcript_text = transcribe_audio(audio_path)
 
-            transcript_path = Path(output_dir) / f"{Path(video_path).stem}_transcript.txt"
+            transcript_path = (
+                Path(output_dir) / f"{Path(video_path).stem}_transcript.txt"
+            )
             with open(transcript_path, "w", encoding="utf-8") as f:
                 f.write(transcript_text)
 

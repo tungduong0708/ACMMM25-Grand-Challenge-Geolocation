@@ -114,20 +114,23 @@ async def fetch_links_to_json(
     # Process results into the desired format
     json_data = []
     for i, (link, result) in enumerate(zip(links, results)):
-        print(f"  Processing {i+1}/{len(links)}: {link}")
+        print(f"  Processing {i + 1}/{len(links)}: {link}")
 
         if isinstance(result, BaseException):
             # Handle errors gracefully
-            json_data.append(
-                {"link": link, "content": "Fail to fetch content..."}
-            )
+            json_data.append({"link": link, "content": "Fail to fetch content..."})
         else:
             # Successfully fetched content - apply length limit
             content = result["text"]
             if len(content) > max_content_length:
-                content = content[:max_content_length] + "... [content truncated due to length limit]"
-                print(f"    ✂️ Content truncated from {len(result['text'])} to {max_content_length} characters")
-            
+                content = (
+                    content[:max_content_length]
+                    + "... [content truncated due to length limit]"
+                )
+                print(
+                    f"    ✂️ Content truncated from {len(result['text'])} to {max_content_length} characters"
+                )
+
             json_data.append({"link": link, "content": content})
 
     # Ensure output directory exists
@@ -141,7 +144,9 @@ async def fetch_links_to_json(
     print(f"💾 Saved content from {len(links)} links to {output_path}")
 
     # Print summary
-    successful = sum(1 for item in json_data if not item["content"].startswith("Error fetching"))
+    successful = sum(
+        1 for item in json_data if not item["content"].startswith("Error fetching")
+    )
     failed = len(json_data) - successful
     print(f"📊 Summary: {successful} successful, {failed} failed")
 
@@ -152,10 +157,12 @@ if __name__ == "__main__":
     test_links = [
         "https://www.rainews.it/dl/img/2022/05/06/1651819610247_fermata_bus_Avdivka.jpg"
     ]
-    
+
     # Run the async function
-    asyncio.run(fetch_links_to_json(
-        links=test_links, 
-        output_path="content_results.json",
-        max_content_length=5000  # Limit content to 5000 characters per link
-    ))
+    asyncio.run(
+        fetch_links_to_json(
+            links=test_links,
+            output_path="content_results.json",
+            max_content_length=5000,  # Limit content to 5000 characters per link
+        )
+    )

@@ -2,8 +2,7 @@ import json
 import os
 from typing import Optional
 
-SINGLE_PROMPT = (
-    '''
+SINGLE_PROMPT = """
     You are an expert in geo-localization. Analyze the image and determine the most precise possible location—ideally identifying the exact building, landmark, or facility, not just the city. 
     Examine all provided content links in detail, using both textual and visual clues to support your conclusion. 
     Use only the provided links for evidence. Any additional links must directly support specific visual observations (e.g., satellite imagery or publicly available street-level photos of the same location). 
@@ -34,11 +33,9 @@ SINGLE_PROMPT = (
     - Maintain the order of evidence to match the sequence in which clues are introduced.  
     - The combination of all "analysis" fields should make it clear how the clues lead to the final coordinates, without revealing intermediate reasoning or metadata.  
     - **Do not use metadata** (e.g., EXIF data, filenames, author handles, timestamps, or embedded properties) as part of the analysis or evidence.
-    '''
-)
+    """
 
-BATCH_IMAGE_TEXT_PROMPT = (
-    '''
+BATCH_IMAGE_TEXT_PROMPT = """
     You are an expert in geo-localization. Analyze the image and determine the most precise possible location—ideally identifying the exact building, landmark, or facility, not just the city. 
     Examine all provided content links in detail, using both textual and visual clues to support your conclusion. 
     Use only the provided links for evidence. Any additional links must directly support specific visual observations (e.g., satellite imagery or publicly available street-level photos of the same location). 
@@ -69,11 +66,9 @@ BATCH_IMAGE_TEXT_PROMPT = (
         + For visual clues, cite `image_{idx:03d}.jpg` in `references` and any satellite/map URLs as needed.
     - MUST use given links to support the analysis.
     - If you can’t identify a specific building, give the city‑center coordinates.
-    '''
-)
+    """
 
-BATCH_TEXT_PROMPT = (
-    '''
+BATCH_TEXT_PROMPT = """
     You are an expert in geo-localization. Analyze the data and determine the most precise possible location—ideally identifying the exact building, landmark, or facility, not just the city. 
     Examine all provided content links in detail, using textual clues to support your conclusion. 
     Use only the provided links for evidence. 
@@ -102,11 +97,9 @@ BATCH_TEXT_PROMPT = (
     - The "analysis" field must describe the clue and cite reference in its corresponding "references" using bracketed indices like [1], [2], etc. The corresponding URLs for those references must be included in the "references" list for that object. For contextual evidence, must cite textual/news URLs.
     - MUST use given links to support the analysis.
     - If you can’t identify a specific building, give the city‑center coordinates.
-    '''
-)
+    """
 
-BATCH_IMAGE_PROMPT = (
-    '''
+BATCH_IMAGE_PROMPT = """
     You are an expert in geo-localization. Analyze the image and determine the most precise possible location—ideally identifying the exact building, landmark, or facility, not just the city. 
     Examine all provided content links in detail, using both textual and visual clues to support your conclusion. 
     Use only the provided links for evidence. Any additional links must directly support specific visual observations (e.g., satellite imagery or publicly available street-level photos of the same location). 
@@ -137,11 +130,9 @@ BATCH_IMAGE_PROMPT = (
         + For visual clues, cite `image_{idx:03d}.jpg` in `references` and any satellite/map URLs as needed.
     - MUST use given links to support the analysis.
     - If you can’t identify a specific building, give the city‑center coordinates.
-    '''
-)
-
-LOCATION_PROMPT = (
     """
+
+LOCATION_PROMPT = """
     Location: {location}
 
     Your task is to determine the geographic coordinates (latitude and longitude) of the specified location by following these steps:
@@ -167,10 +158,8 @@ LOCATION_PROMPT = (
     - The "references" list must include all URLs cited in the analysis.
     - Do not include any text outside of the JSON structure.
     """
-)
 
-VERIFICATION_IMAGE_TEXT_PROMPT = (
-    """
+VERIFICATION_IMAGE_TEXT_PROMPT = """
     You are an expert in multimedia verification. Analyze the provided content and decide if it’s authentic or fabricated. Support your conclusion with detailed, verifiable evidence.
 
     {prompt_data}
@@ -217,10 +206,8 @@ VERIFICATION_IMAGE_TEXT_PROMPT = (
 
     Return only the JSON—no extra text, markdown, or comments.
     """
-)
 
-VERIFICATION_TEXT_PROMPT = (
-    """
+VERIFICATION_TEXT_PROMPT = """
     You are an expert in multimedia verification. Analyze the provided content and decide if it’s authentic or fabricated. Support your conclusion with detailed, verifiable evidence.
 
     {prompt_data}
@@ -266,10 +253,8 @@ VERIFICATION_TEXT_PROMPT = (
 
     Return only the JSON—no extra text, markdown, or comments.
     """
-)
 
-VERIFICATION_IMAGE_PROMPT = (
-    """
+VERIFICATION_IMAGE_PROMPT = """
     You are an expert in multimedia verification. Analyze the provided content and decide if it’s authentic or fabricated. Support your conclusion with detailed, verifiable evidence.
 
     {prompt_data}
@@ -314,64 +299,6 @@ VERIFICATION_IMAGE_PROMPT = (
 
     Return only the JSON—no extra text, markdown, or comments.
     """
-)
-
-RANKING_PROMPT = (
-    """
-    You are evaluating multiple geolocation predictions from different modalities on their analysis and logic leading to the prediction. Analyze and score each prediction individually, then provide a comparative ranking.
-
-    Predictions to evaluate:
-    {predictions}
-
-    For each prediction, evaluate on a 50-point scale using these criteria (each 0-10 points):
-
-    1. **Plausibility of the Location (0–10)**
-    2. **Specificity and Relevance of the Location Name (0–10)**  
-    3. **Depth and Validity of the Evidence (0–10)**
-    4. **Use and Integration of Modalities (0–10)**
-    5. **Confidence and Clarity of Justification (0–10)**
-
-    Return a JSON object with the best prediction and all scored predictions:
-
-    {
-        "best_prediction": {
-            "latitude": float,
-            "longitude": float,
-            "location": string,
-            "score": int
-        },
-        "all_predictions": [
-            {
-                "image_prediction": bool,
-                "text_prediction": bool,
-                "score": int,
-                "breakdown": {
-                    "location_plausibility": int,
-                    "location_name_specificity": int,
-                    "evidence_quality": int,
-                    "modality_use": int,
-                    "justification_clarity": int
-                },
-                "prediction": {
-                    "latitude": float,
-                    "longitude": float,
-                    "location": string,
-                    "evidence": [
-                        {
-                            "analysis": string,
-                            "references": [string, …]
-                        }
-                    ]
-                }
-            }
-        ]
-    }
-
-    The best_prediction should contain the GPS coordinates and location from the highest-scoring prediction.
-    Provide detailed scoring that reflects the quality and plausibility of each prediction, not correctness. Usually, the best prediction is the one having the most context.
-    """
-)
-
 
 
 def rag_prompt(index_search_json: str, n_coords: Optional[int] = None) -> str:
@@ -388,16 +315,16 @@ def rag_prompt(index_search_json: str, n_coords: Optional[int] = None) -> str:
     """
     if not os.path.exists(index_search_json):
         return ""
-    
-    with open(index_search_json, 'r', encoding='utf-8') as file:
+
+    with open(index_search_json, "r", encoding="utf-8") as file:
         data = json.load(file)
 
     candidates_gps = data.get("candidates_gps", [])
     reverse_gps = data.get("reverse_gps", [])
 
     if n_coords is not None:
-        candidates_gps = candidates_gps[:min(n_coords, len(candidates_gps))]
-        reverse_gps = reverse_gps[:min(n_coords, len(reverse_gps))]
+        candidates_gps = candidates_gps[: min(n_coords, len(candidates_gps))]
+        reverse_gps = reverse_gps[: min(n_coords, len(reverse_gps))]
     else:
         candidates_gps = candidates_gps
         reverse_gps = reverse_gps
@@ -405,10 +332,9 @@ def rag_prompt(index_search_json: str, n_coords: Optional[int] = None) -> str:
     candidates_str = (
         "[" + ", ".join(f"[{lat}, {lon}]" for (lat, lon) in candidates_gps) + "]"
     )
-    reverse_str = (
-        "[" + ", ".join(f"[{lat}, {lon}]" for (lat, lon) in reverse_gps) + "]"
-    )
+    reverse_str = "[" + ", ".join(f"[{lat}, {lon}]" for (lat, lon) in reverse_gps) + "]"
     return f"For your reference, these are coordinates of some similar images: {candidates_str}, and these are coordinates of some dissimilar images: {reverse_str}."
+
 
 def metadata_prompt(metadata_file_path: str) -> str:
     """
@@ -424,7 +350,7 @@ def metadata_prompt(metadata_file_path: str) -> str:
         return ""
 
     try:
-        with open(metadata_file_path, 'r', encoding='utf-8') as file:
+        with open(metadata_file_path, "r", encoding="utf-8") as file:
             metadata = json.load(file)
 
         if not metadata:
@@ -459,17 +385,18 @@ def metadata_prompt(metadata_file_path: str) -> str:
     except Exception:
         return ""
 
+
 def search_prompt(search_candidates: list[str], n_search: Optional[int] = None) -> str:
     """
     Formats search candidate links into a prompt string.
-    
+
     Args:
         search_candidates (list[str]): List of candidate URLs from image search
         n_search (int): Number of results to include (default: 5)
-        
+
     Returns:
         str: Formatted string with candidate links, each on a new line
-        
+
     Example:
         >>> candidates = search_prompt(["https://example1.com", "https://example2.com"], n_search=3)
         >>> print(candidates)
@@ -477,11 +404,11 @@ def search_prompt(search_candidates: list[str], n_search: Optional[int] = None) 
         https://example1.com
         https://example2.com
     """
-    
+
     if not search_candidates or not isinstance(search_candidates, list):
         return ""
-    
-    EXCLUDE_DOMAINS =[
+
+    EXCLUDE_DOMAINS = [
         "x.com",
         "twitter.com",
         "linkedin.com",
@@ -493,16 +420,17 @@ def search_prompt(search_candidates: list[str], n_search: Optional[int] = None) 
 
     for domain in EXCLUDE_DOMAINS:
         search_candidates = [url for url in search_candidates if domain not in url]
-    
+
     if n_search is not None:
-        search_candidates = search_candidates[:min(n_search, len(search_candidates))]
-    
+        search_candidates = search_candidates[: min(n_search, len(search_candidates))]
+
     try:
         prompt = "\n".join(search_candidates)
         return prompt
 
     except Exception:
         return ""
+
 
 def image_search_prompt(image_search_json: str, n_search: Optional[int] = None) -> str:
     """
@@ -522,15 +450,21 @@ def image_search_prompt(image_search_json: str, n_search: Optional[int] = None) 
         data_list = json.load(file)
         for json_data in data_list:
             if "pages_with_matching_images" in json_data:
-                pages_with_matching_images.update(json_data["pages_with_matching_images"])
+                pages_with_matching_images.update(
+                    json_data["pages_with_matching_images"]
+                )
             elif "full_matching_images" in json_data:
                 full_matching_images.update(json_data["full_matching_images"])
             elif "partial_matching_images" in json_data:
                 partial_matching_images.update(json_data["partial_matching_images"])
 
-    if not pages_with_matching_images and not full_matching_images and not partial_matching_images:
+    if (
+        not pages_with_matching_images
+        and not full_matching_images
+        and not partial_matching_images
+    ):
         return ""
-    
+
     prompt = "Those are pages with matching images:\n"
     prompt += search_prompt(list(pages_with_matching_images), n_search=n_search)
     # prompt += "\n\nThose are full matching images:\n"
@@ -539,6 +473,7 @@ def image_search_prompt(image_search_json: str, n_search: Optional[int] = None) 
     # prompt += search_prompt(list(partial_matching_images), n_search=n_search)
 
     return prompt
+
 
 def search_content_prompt(search_content_json: str) -> str:
     """
@@ -554,7 +489,7 @@ def search_content_prompt(search_content_json: str) -> str:
         return ""
 
     try:
-        with open(search_content_json, 'r', encoding='utf-8') as file:
+        with open(search_content_json, "r", encoding="utf-8") as file:
             data = json.load(file)
 
         if not data or not isinstance(data, list):
@@ -565,6 +500,7 @@ def search_content_prompt(search_content_json: str) -> str:
 
     except Exception:
         return ""
+
 
 def transcript_prompt(audio_dir: str) -> str:
     """
@@ -578,7 +514,7 @@ def transcript_prompt(audio_dir: str) -> str:
     """
     if not os.path.exists(audio_dir):
         return ""
-    
+
     transcript_content = []
 
     for txt_file in os.listdir(audio_dir):
@@ -588,22 +524,33 @@ def transcript_prompt(audio_dir: str) -> str:
                 transcript_content.append(file.read().strip())
 
     combined_transcript = "\n".join(transcript_content)
-    return f"This is the transcript of the video: {combined_transcript}" if combined_transcript else ""
+    return (
+        f"This is the transcript of the video: {combined_transcript}"
+        if combined_transcript
+        else ""
+    )
 
-def combine_prompt_data(prompt_dir: str, n_search: Optional[int] = None, n_coords: Optional[int] = None, image_prediction: bool = True,  text_prediction: bool = True) -> str:
+
+def combine_prompt_data(
+    prompt_dir: str,
+    n_search: Optional[int] = None,
+    n_coords: Optional[int] = None,
+    image_prediction: bool = True,
+    text_prediction: bool = True,
+) -> str:
     """
     Combines all prompt data into one comprehensive prompt string.
-    
+
     Args:
         base_dir (str): Path to the base directory
         candidates_gps (list[tuple]): GPS coordinates for similar images (for RAG)
         reverse_gps (list[tuple]): GPS coordinates for dissimilar images (for RAG)
         n_search (int): Number of search results to include (default: 5)
         n_coords (int, optional): Number of coordinates to include in RAG
-        
+
     Returns:
         str: Combined prompt string
-        
+
     Example:
         >>> prompt = combine_prompts(
         ...     base_dir="path/to/base_dir",
@@ -611,14 +558,14 @@ def combine_prompt_data(prompt_dir: str, n_search: Optional[int] = None, n_coord
         ...     reverse_gps=[(51.5074, -0.1278)]
         ... )
     """
-    
+
     prompt_parts = []
-    
+
     # 1. RAG prompt (optional)
     if n_coords is not None:
         rag_text = rag_prompt(os.path.join(prompt_dir, "index_search.json"), n_coords)
         prompt_parts.append(rag_text)
-    
+
     # 2. Metadata prompt
     if text_prediction:
         metadata_text = metadata_prompt(os.path.join(prompt_dir, "metadata.json"))
@@ -627,12 +574,16 @@ def combine_prompt_data(prompt_dir: str, n_search: Optional[int] = None, n_coord
 
     # 3. Search prompt
     if image_prediction:
-        image_search_text = search_content_prompt(os.path.join(prompt_dir, "image_search_content.json"))
+        image_search_text = search_content_prompt(
+            os.path.join(prompt_dir, "image_search_content.json")
+        )
         if image_search_text:
             prompt_parts.append(image_search_text)
-    
+
     if text_prediction:
-        search_content_text = search_content_prompt(os.path.join(prompt_dir, "text_search_content.json"))
+        search_content_text = search_content_prompt(
+            os.path.join(prompt_dir, "text_search_content.json")
+        )
         if search_content_text:
             prompt_parts.append(search_content_text)
 
@@ -640,26 +591,33 @@ def combine_prompt_data(prompt_dir: str, n_search: Optional[int] = None, n_coord
     transcript_text = transcript_prompt(os.path.join(prompt_dir, "audio"))
     if transcript_text:
         prompt_parts.append(transcript_text)
-    
+
     # Combine all parts with double newlines for readability
     combined_prompt = "\n\n".join(part for part in prompt_parts if part.strip())
-    
+
     return combined_prompt
 
-def batch_combine_prompts(prompt_dir: str, n_search: Optional[int] = None, n_coords: Optional[int] = None, image_prediction: bool = True, text_prediction: bool = True) -> str:
+
+def batch_combine_prompts(
+    prompt_dir: str,
+    n_search: Optional[int] = None,
+    n_coords: Optional[int] = None,
+    image_prediction: bool = True,
+    text_prediction: bool = True,
+) -> str:
     """
     Combines all prompts into one comprehensive prompt string.
-    
+
     Args:
         base_dir (str): Path to the base directory
         candidates_gps (list[tuple]): GPS coordinates for similar images (for RAG)
         reverse_gps (list[tuple]): GPS coordinates for dissimilar images (for RAG)
         n_search (int): Number of search results to include (default: 5)
         n_coords (int, optional): Number of coordinates to include in RAG
-        
+
     Returns:
         str: Combined prompt string
-        
+
     Example:
         >>> prompt = combine_prompts(
         ...     base_dir="path/to/base_dir",
@@ -668,7 +626,13 @@ def batch_combine_prompts(prompt_dir: str, n_search: Optional[int] = None, n_coo
         ... )
     """
 
-    prompt_data = combine_prompt_data(prompt_dir, n_search=n_search, n_coords=n_coords, image_prediction=image_prediction, text_prediction=text_prediction)
+    prompt_data = combine_prompt_data(
+        prompt_dir,
+        n_search=n_search,
+        n_coords=n_coords,
+        image_prediction=image_prediction,
+        text_prediction=text_prediction,
+    )
 
     if image_prediction and text_prediction:
         prompt = BATCH_IMAGE_TEXT_PROMPT.strip()
@@ -680,6 +644,7 @@ def batch_combine_prompts(prompt_dir: str, n_search: Optional[int] = None, n_coo
     prompt = prompt.replace("{prompt_data}", prompt_data)
 
     return prompt
+
 
 def location_prompt(location: str) -> str:
     """
@@ -693,13 +658,22 @@ def location_prompt(location: str) -> str:
     """
     if not location:
         return ""
-    
+
     prompt = LOCATION_PROMPT.strip()
     prompt = prompt.replace("{location}", location)
 
     return prompt
 
-def verification_prompt(satellite_image_id: int, prediction: dict, prompt_dir: str, n_search: Optional[int] = None, n_coords: Optional[int] = None, image_prediction: bool = True, text_prediction: bool = True) -> str:
+
+def verification_prompt(
+    satellite_image_id: int,
+    prediction: dict,
+    prompt_dir: str,
+    n_search: Optional[int] = None,
+    n_coords: Optional[int] = None,
+    image_prediction: bool = True,
+    text_prediction: bool = True,
+) -> str:
     """
     Creates a verification prompt string with the provided data and prediction.
 
@@ -710,8 +684,14 @@ def verification_prompt(satellite_image_id: int, prediction: dict, prompt_dir: s
     Returns:
         str: Formatted verification prompt string.
     """
-    prompt_data = combine_prompt_data(prompt_dir, n_search=n_search, n_coords=n_coords, image_prediction=image_prediction, text_prediction=text_prediction)
-    
+    prompt_data = combine_prompt_data(
+        prompt_dir,
+        n_search=n_search,
+        n_coords=n_coords,
+        image_prediction=image_prediction,
+        text_prediction=text_prediction,
+    )
+
     if image_prediction and text_prediction:
         prompt = VERIFICATION_IMAGE_TEXT_PROMPT.strip()
     elif image_prediction:
@@ -725,23 +705,6 @@ def verification_prompt(satellite_image_id: int, prediction: dict, prompt_dir: s
 
     return prompt
 
-def ranking_prompt(predictions: list[dict]) -> str:
-    """
-    Creates a ranking prompt string with the provided prediction.
-
-    Args:
-        prediction (dict): The prediction data to include.
-
-    Returns:
-        str: Formatted ranking prompt string.
-    """
-    if not predictions:
-        return ""
-
-    prompt = RANKING_PROMPT.strip()
-    prompt = prompt.replace("{predictions}", json.dumps(predictions, indent=2))
-
-    return prompt
 
 # Example usage
 if __name__ == "__main__":
