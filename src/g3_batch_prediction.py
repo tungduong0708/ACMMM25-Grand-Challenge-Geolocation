@@ -1,47 +1,36 @@
 import os
 import asyncio
-
 import json
+import logging
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 import numpy as np
 import torch
 from tqdm.asyncio import tqdm as atqdm
 import yaml
 from google import genai
 from google.genai import types
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 from dotenv import dotenv_values
 
-from prompt import diversification_prompt, location_prompt, verification_prompt
+from prompt import (
+    Evidence,
+    GPSPrediction,
+    LocationPrediction,
+    diversification_prompt,
+    location_prompt,
+    verification_prompt,
+)
 
 from utils import (
     get_gps_from_location,
     calculate_similarity_scores,
     handle_async_api_call_with_retry,
     extract_and_parse_json,
+    image_to_base64,
 )
 from data_processor import DataProcessor
 from g3.G3 import G3
-
-
-class Evidence(BaseModel):
-    analysis: str
-    references: Optional[List[str]] = []
-
-
-class LocationPrediction(BaseModel):
-    latitude: float
-    longitude: float
-    location: str
-    evidence: List[Evidence]
-
-
-class GPSPrediction(BaseModel):
-    latitude: float
-    longitude: float
-    analysis: Optional[str] = ""
-    references: Optional[List[str]] = []
 
 
 class G3BatchPredictor:
@@ -140,7 +129,7 @@ class G3BatchPredictor:
         )
         self.model.to(self.device)
         self.model.eval()
-        print(
+        logging.info(
             f"✅ Successfully loaded G3 model checkpoint from: {self.checkpoint_path}"
         )
 
@@ -151,7 +140,7 @@ class G3BatchPredictor:
         n_coords: Optional[int] = None,
         image_prediction: bool = True,
         text_prediction: bool = True,
-    ) -> dict:
+    ) -> LocationPrediction:
         """
         Generate a prediction using the Gemini LLM with Pydantic structured output.
 
@@ -187,7 +176,6 @@ class G3BatchPredictor:
         client = genai.Client(api_key=self.env["GOOGLE_CLOUD_API_KEY"])
 
         async def api_call():
-            # Run the synchronous API call in a thread executor to make it truly async
             loop = asyncio.get_event_loop()
             response = await loop.run_in_executor(
                 None,
@@ -209,13 +197,15 @@ class G3BatchPredictor:
 
             try:
                 validated = LocationPrediction.model_validate(parsed_json)
-                return validated.model_dump()
+                return validated
             except (ValidationError, ValueError):
                 raise ValueError("Empty or invalid LLM response")
 
         return await handle_async_api_call_with_retry(
             api_call,
-            fallback_result={},
+            fallback_result=LocationPrediction(
+                latitude=0.0, longitude=0.0, location="", evidence=[]
+            ),
             error_context=f"LLM prediction with {model_name}",
         )
 
@@ -224,7 +214,7 @@ class G3BatchPredictor:
         model_name: str = "gemini-2.5-flash",
         image_prediction: bool = True,
         text_prediction: bool = True,
-    ) -> dict:
+    ) -> LocationPrediction:
         """
         Diversification prediction without preprocessing (assumes preprocessing already done).
         Runs different sample sizes in parallel for faster execution.
@@ -249,11 +239,8 @@ class G3BatchPredictor:
                     text_prediction=text_prediction,
                 )
 
-                print(prediction)
-
                 if prediction:
-                    coords = (prediction["latitude"], prediction["longitude"])
-                    # print(f"✅ Prediction with {num_sample} samples successful: {coords}")
+                    coords = (prediction.latitude, prediction.longitude)
                     return (num_sample, coords, prediction)
                 else:
                     print(
@@ -262,7 +249,9 @@ class G3BatchPredictor:
 
         # Run all sample sizes in parallel
         num_samples = [10, 15, 20]
-        print(f"🚀 Running {len(num_samples)} sample sizes in parallel: {num_samples}")
+        logging.info(
+            f"🚀 Running {len(num_samples)} sample sizes in parallel: {num_samples}"
+        )
 
         tasks = [try_sample_size(num_sample) for num_sample in num_samples]
         results = await atqdm.gather(
@@ -273,11 +262,11 @@ class G3BatchPredictor:
         predictions_dict = {}
         for num_sample, coords, prediction in results:
             predictions_dict[coords] = prediction
-            print(f"✅ Collected prediction with {num_sample} samples: {coords}")
+            logging.info(f"✅ Collected prediction with {num_sample} samples: {coords}")
 
         # Convert predictions to coordinate list for similarity scoring
         predicted_coords = list(predictions_dict.keys())
-        print(f"Predicted coordinates: {predicted_coords}")
+        logging.info(f"Predicted coordinates: {predicted_coords}")
 
         if not predicted_coords:
             raise ValueError("No valid predictions obtained from any sample size")
@@ -295,9 +284,9 @@ class G3BatchPredictor:
         best_coords = predicted_coords[best_idx]
         best_prediction = predictions_dict[best_coords]
 
-        print(f"🎯 Best prediction selected: {best_coords}")
-        print(f"   Similarity scores: {avg_similarities}")
-        print(f"   Best index: {best_idx}")
+        logging.info(f"🎯 Best prediction selected: {best_coords}")
+        logging.info(f"   Similarity scores: {avg_similarities}")
+        logging.info(f"   Best index: {best_idx}")
 
         # print(json.dumps(best_prediction, indent=2))  # Commented out verbose output
 
@@ -307,7 +296,7 @@ class G3BatchPredictor:
         self,
         model_name: str = "gemini-2.5-flash",
         location: str = "specified location",
-    ) -> dict:
+    ) -> GPSPrediction:
         """
         Generate a location-based prediction using the Gemini LLM with centralized retry logic.
 
@@ -322,58 +311,59 @@ class G3BatchPredictor:
             raise ValueError("Location must be specified for location-based prediction")
 
         lat, lon = get_gps_from_location(location)
-        if lat is not None or lon is not None:
-            print(f"Using GPS coordinates for location '{location}': ({lat}, {lon})")
-            return {
-                "latitude": lat,
-                "longitude": lon,
-            }
-
-        # Create location prompt
-        prompt = location_prompt(location)
-
-        client = genai.Client(api_key=self.env["GOOGLE_CLOUD_API_KEY"])
-
-        async def api_call():
-            # Run the synchronous API call in a thread executor to make it truly async
-            loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
-                None,
-                lambda: client.models.generate_content(
-                    model=model_name,
-                    contents=[prompt],
-                    config=types.GenerateContentConfig(
-                        tools=[
-                            types.Tool(google_search=types.GoogleSearch()),
-                        ],
-                        temperature=0.1,
-                        top_p=0.95,
-                    ),
-                ),
+        if lat is not None and lon is not None:
+            logging.info(
+                f"Using GPS coordinates for location '{location}': ({lat}, {lon})"
             )
+            return GPSPrediction(
+                latitude=lat, longitude=lon, analysis="", references=[]
+            )
+        else:
+            prompt = location_prompt(location)
+            client = genai.Client(api_key=self.env["GOOGLE_CLOUD_API_KEY"])
 
-            raw_text = response.text.strip() if response.text is not None else ""
-            parsed_json = extract_and_parse_json(raw_text)
+            async def api_call():
+                # Run the synchronous API call in a thread executor to make it truly async
+                loop = asyncio.get_event_loop()
+                response = await loop.run_in_executor(
+                    None,
+                    lambda: client.models.generate_content(
+                        model=model_name,
+                        contents=[prompt],
+                        config=types.GenerateContentConfig(
+                            tools=[
+                                types.Tool(google_search=types.GoogleSearch()),
+                            ],
+                            temperature=0.1,
+                            top_p=0.95,
+                        ),
+                    ),
+                )
 
-            try:
-                validated = GPSPrediction.model_validate(parsed_json)
-                return validated.model_dump()
-            except (ValidationError, ValueError):
-                raise ValueError("Empty or invalid LLM response")
+                raw_text = response.text.strip() if response.text is not None else ""
+                parsed_json = extract_and_parse_json(raw_text)
 
-        return await handle_async_api_call_with_retry(
-            api_call,
-            fallback_result={},
-            error_context=f"Location prediction for '{location}' with {model_name}",
-        )
+                try:
+                    validated = GPSPrediction.model_validate(parsed_json)
+                    return validated
+                except (ValidationError, ValueError):
+                    raise ValueError("Empty or invalid LLM response")
+
+            return await handle_async_api_call_with_retry(
+                api_call,
+                fallback_result=GPSPrediction(
+                    latitude=0.0, longitude=0.0, analysis="", references=[]
+                ),
+                error_context=f"Location prediction for '{location}' with {model_name}",
+            )
 
     async def verification_predict(
         self,
-        prediction: dict,
+        prediction: LocationPrediction,
         model_name: str = "gemini-2.5-flash",
         image_prediction: bool = True,
         text_prediction: bool = True,
-    ) -> dict:
+    ) -> LocationPrediction:
         """
         Generate verification prediction based on the provided prediction.
 
@@ -386,7 +376,7 @@ class G3BatchPredictor:
         """
         # Prepare verification data (now async)
         satellite_image_id = await self.data_processor.prepare_location_images(
-            prediction=prediction,
+            prediction=prediction.model_dump(),
             image_prediction=image_prediction,
             text_prediction=text_prediction,
         )
@@ -406,7 +396,7 @@ class G3BatchPredictor:
         # Prepare verification prompt
         prompt = verification_prompt(
             satellite_image_id=satellite_image_id,
-            prediction=prediction,
+            prediction=prediction.model_dump(),
             prompt_dir=str(self.prompt_dir),
             image_prediction=image_prediction,
             text_prediction=text_prediction,
@@ -437,13 +427,15 @@ class G3BatchPredictor:
 
             try:
                 validated = LocationPrediction.model_validate(parsed_json)
-                return validated.model_dump()
+                return validated
             except (ValidationError, ValueError):
-                return {}
+                raise ValueError("Empty or invalid LLM response")
 
         return await handle_async_api_call_with_retry(
             api_call,
-            fallback_result={},
+            fallback_result=LocationPrediction(
+                latitude=0.0, longitude=0.0, location="", evidence=[]
+            ),
             error_context=f"Verification prediction with {model_name}",
         )
 
@@ -452,7 +444,7 @@ class G3BatchPredictor:
         model_name: str = "gemini-2.5-flash",
         image_prediction: bool = True,
         text_prediction: bool = True,
-    ) -> dict:
+    ) -> LocationPrediction:
         """
         Complete prediction pipeline without preprocessing (assumes preprocessing already done).
         Used for parallel execution where preprocessing is done once beforehand.
@@ -466,10 +458,12 @@ class G3BatchPredictor:
         Returns:
             dict: Final prediction with latitude, longitude, location, reason, and evidence
         """
-        print(f"🚀 Starting multi-modal prediction pipeline with model: {model_name}")
+        logging.info(
+            f"🚀 Starting multi-modal prediction pipeline with model: {model_name}"
+        )
         await self.data_processor.preprocess_input_data()
         # Step 1: Run diversification prediction (this is already parallel internally)
-        print(
+        logging.info(
             f"\n🔄 Running diversification prediction for Image={image_prediction}, Text={text_prediction}..."
         )
         diversification_result = await self.diversification_predict(
@@ -478,59 +472,35 @@ class G3BatchPredictor:
             text_prediction=text_prediction,
         )
 
-        # Step 2: Run location prediction in parallel with preparing for verification
-        async def run_location_prediction():
-            """Run location prediction with retry logic"""
-            while True:
-                location_prediction = await self.location_predict(
-                    model_name=model_name,
-                    location=diversification_result.get(
-                        "location", "specified location"
-                    ),
-                )
-                if location_prediction:  # Check if we got a valid response
-                    return location_prediction
-                else:
-                    print("Location prediction returned empty, retrying...")
-
-        async def prepare_for_verification():
-            """Prepare verification data in parallel"""
-            # Create a copy of diversification result for verification
-            verification_input = diversification_result.copy()
-            return verification_input
-
-        # Run location prediction and verification preparation in parallel
-        print("\n🔄 Running location prediction and verification prep in parallel...")
-        location_prediction, verification_input = await asyncio.gather(
-            run_location_prediction(), prepare_for_verification()
+        # Step 2: Run location prediction
+        location_prediction = await self.location_predict(
+            model_name=model_name, location=diversification_result.location
         )
 
-        print("✅ Location prediction completed:")
-        # print(json.dumps(location_prediction, indent=2))  # Commented out verbose output
+        logging.info("✅ Location prediction completed:")
 
         # Step 3: Update coordinates and evidence from location prediction
-        result = verification_input.copy()
-        result["longitude"] = location_prediction.get(
-            "longitude", result.get("longitude")
-        )
-        result["latitude"] = location_prediction.get("latitude", result.get("latitude"))
+        result = diversification_result.model_copy()
+        result.longitude = location_prediction.longitude
+        result.latitude = location_prediction.latitude
 
         # Step 4: Normalize and append location evidence
-        if "analysis" in location_prediction and "references" in location_prediction:
-            location_evidence = [
-                {
-                    "analysis": location_prediction["analysis"],
-                    "references": location_prediction["references"],
-                }
-            ]
+        if location_prediction.analysis and location_prediction.references:
+            location_evidence = Evidence(
+                analysis=location_prediction.analysis,
+                references=location_prediction.references,
+            )
         else:
-            location_evidence = location_prediction.get("evidence", [])
+            location_evidence = Evidence(
+                analysis="No specific location analysis provided.",
+                references=[],
+            )
 
         # Append to result evidence
-        result.setdefault("evidence", []).extend(location_evidence)
+        result.evidence.append(location_evidence)
 
         # Step 5: Run verification prediction
-        print(
+        logging.info(
             f"\n🔄 Running verification prediction for Image={image_prediction}, Text={text_prediction}..."
         )
         result = await self.verification_predict(
@@ -540,12 +510,23 @@ class G3BatchPredictor:
             text_prediction=text_prediction,
         )
 
-        print(
+        logging.info(
             f"\n🎯 Final prediction for Image={image_prediction}, Text={text_prediction}:"
         )
         # print(json.dumps(result, indent=2))  # Commented out verbose output
 
         return result
+
+    def get_response(self, prediction: LocationPrediction) -> LocationPrediction:
+        """
+        Convert image references in the prediction to base64 strings.
+        """
+        for evidence in prediction.evidence:
+            for i, ref in enumerate(evidence.references):
+                if ref.startswith("image"):
+                    evidence.references[i] = image_to_base64(self.image_dir / ref)
+                    print(ref)
+        return prediction
 
 
 if __name__ == "__main__":
@@ -559,28 +540,36 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     async def main():
+        logging.basicConfig(
+            level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+        )
         try:
-            print("🚀 Starting G3 Batch Predictor...")
+            logging.info("🚀 Starting G3 Batch Predictor...")
 
-            # Initialize predictor
+            # # Initialize predictor
             predictor = G3BatchPredictor(
                 device="cuda" if torch.cuda.is_available() else "cpu"
             )
 
             # Run prediction - always use the predict method for 3 modalities
-            print("\n🔄 Running complete multi-modal prediction pipeline...")
+            logging.info("\n🔄 Running complete multi-modal prediction pipeline...")
             result = await predictor.predict(model_name="gemini-2.5-pro")
 
             with open("g3_batch_prediction_result.json", "w") as f:
-                json.dump(result, f, indent=2)
-            print(json.dumps(result, indent=2))
-            print("\n🎉 Multi-modal prediction completed successfully!")
+                json.dump(result.model_dump(), f, indent=2)
+
+            logging.info(json.dumps(result.model_dump(), indent=2))
+            result = predictor.get_response(result)
+            with open("g3_batch_prediction_result_base64.json", "w") as f:
+                json.dump(result.model_dump(), f, indent=2)
+
+            logging.info("\n🎉 Multi-modal prediction completed successfully!")
 
         except Exception as e:
-            print(f"❌ Multi-modal prediction failed: {e}")
+            logging.error(f"❌ Multi-modal prediction failed: {e}")
             import traceback
 
-            traceback.print_exc()
+            logging.error(traceback.format_exc())
             exit(1)
 
     # Run the async main function

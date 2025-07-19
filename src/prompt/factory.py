@@ -1,8 +1,27 @@
 import json
 import os
+from pydantic import BaseModel
+from typing import List
 
 from .template import DIVERSIFICATION_PROMPT, LOCATION_PROMPT, VERIFICATION_PROMPT
 
+class Evidence(BaseModel):
+    analysis: str
+    references: List[str] = []
+
+
+class LocationPrediction(BaseModel):
+    latitude: float
+    longitude: float
+    location: str
+    evidence: List[Evidence]
+
+
+class GPSPrediction(BaseModel):
+    latitude: float
+    longitude: float
+    analysis: str
+    references: List[str]
 
 def rag_prompt(index_search_json: str, n_coords: int | None = None) -> str:
     """

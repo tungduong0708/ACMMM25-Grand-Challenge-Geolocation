@@ -183,7 +183,7 @@ def extract_and_save_keyframes(
             ret, frame = cap.read()
             if not ret:
                 continue
-            out_path = os.path.join(output_dir, f"frame_{output_idx:03d}.jpg")
+            out_path = os.path.join(output_dir, f"image_{output_idx:03d}.jpg")
             cv2.imwrite(out_path, frame)
             output_idx += 1
         logger.info(
@@ -193,50 +193,6 @@ def extract_and_save_keyframes(
     cap.release()
     logger.info(f"Extraction complete. Total frames saved: {output_idx}")
     return output_idx
-
-
-# def extract_and_save_keyframes(
-#     video_path: str,
-#     output_dir: str,
-#     step: float = 1.0,
-#     threshold: float = 0.8,
-#     k_min: int = 2,
-#     k_max: int = 8,
-# ) -> str:
-#     logger.info(f"Starting keyframe extraction for {video_path}")
-#     os.makedirs(output_dir, exist_ok=True)
-#     cap_meta = cv2.VideoCapture(video_path)
-#     video_fps = cap_meta.get(cv2.CAP_PROP_FPS) or 1.0
-#     cap_meta.release()
-#     intervals = detect_shot_intervals_local(video_path)
-#     all_indices = []
-#     for start, end in intervals:
-#         frames = sample_frames_per_shot(video_path, start, end, step)
-#         feats = (
-#             np.vstack([color_histogram(f) for f in frames])
-#             if frames
-#             else np.empty((0,))
-#         )
-#         if feats.size < k_min or feats.ndim == 1:
-#             idxs = list(range(len(frames)))
-#         else:
-#             best_k, centers, cidxs = kmeans_silhouette(feats)
-#             idxs = cidxs
-#         global_idxs = [int(start * video_fps) + i for i in idxs]
-#         filtered = redundancy_filter(video_path, global_idxs, threshold)
-#         all_indices.extend(filtered)
-#     all_indices = sorted(set(all_indices))
-#     cap = cv2.VideoCapture(video_path)
-#     output_idx = 0
-#     for idx in all_indices:
-#         cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
-#         ret, frame = cap.read()
-#         if ret:
-#             cv2.imwrite(os.path.join(output_dir, f"frame_{output_idx:06d}.jpg"), frame)
-#             output_idx += 1
-#     cap.release()
-#     logger.info(f"Extraction complete. Total frames saved: {len(all_indices)}")
-#     return output_dir
 
 
 if __name__ == "__main__":
