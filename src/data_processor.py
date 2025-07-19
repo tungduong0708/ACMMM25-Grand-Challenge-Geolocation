@@ -12,7 +12,7 @@ from torch import nn
 
 from prompt.fetch.content_fetch import fetch_links_to_json
 from prompt.fetch.satellite_fetch import fetch_satellite_image
-from prompt.preprocess.keyframe_extract import extract_keyframes
+from prompt.preprocess.keyframe_extract import extract_and_save_keyframes
 from prompt.preprocess.video_transcribe import transcribe_video_directory
 from prompt.search.text_search import text_search_image
 from prompt.search.image_search import image_search_directory
@@ -95,8 +95,8 @@ class DataProcessor:
             ):
                 if idx is None:
                     idx = 0
-                idx = extract_keyframes(
-                    file_path, images_dir=str(output_dir), start_index=idx
+                idx = extract_and_save_keyframes(
+                    video_path=file_path, output_dir=str(output_dir), start_index=idx
                 )
         logger.info(f"✅ Extracted keyframes and images to: {output_dir}")
 

@@ -10,7 +10,7 @@ from tqdm.asyncio import tqdm as atqdm
 import yaml
 from google import genai
 from google.genai import types
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from dotenv import dotenv_values
 
 from prompt import diversification_prompt, location_prompt, verification_prompt
@@ -19,6 +19,7 @@ from utils import (
     get_gps_from_location,
     calculate_similarity_scores,
     handle_async_api_call_with_retry,
+    extract_and_parse_json,
 )
 from data_processor import DataProcessor
 from g3.G3 import G3
@@ -59,6 +60,7 @@ class G3BatchPredictor:
         input_dir: str = "data/input_data",
         prompt_dir: str = "data/prompt_data",
         index_path: str = "data/index/G3.index",
+        hparams_path: str = "g3/hparams.yaml",
         database_csv_path: str = "data/dataset/mp16/MP16_Pro_filtered.csv",
         checkpoint_path: str = "data/checkpoints/mercator_finetune_weight.pth",
     ):
@@ -86,7 +88,7 @@ class G3BatchPredictor:
         os.makedirs(self.audio_dir, exist_ok=True)
 
         # Initialize G3 model
-        hparams = yaml.safe_load(open(self.base_path / "g3/hparams.yaml", "r"))
+        hparams = yaml.safe_load(open(self.base_path / hparams_path, "r"))
         pe = "projection_mercator"
         nn = "rffmlp"
 
@@ -202,18 +204,14 @@ class G3BatchPredictor:
                 ),
             )
 
-            print(response.text)
+            raw_text = response.text.strip() if response.text is not None else ""
+            parsed_json = extract_and_parse_json(raw_text)
 
-            # Use the parsed response directly
-            if response.parsed and isinstance(response.parsed, LocationPrediction):
-                return response.parsed.model_dump()
-            else:
-                print(
-                    "⚠️ Failed to get valid structured response, returning empty dict for retry"
-                )
-                if response.text:
-                    print(f"Raw response (first 1000 chars): {response.text[:1000]}")
-                return {}
+            try:
+                validated = LocationPrediction.model_validate(parsed_json)
+                return validated.model_dump()
+            except (ValidationError, ValueError):
+                raise ValueError("Empty or invalid LLM response")
 
         return await handle_async_api_call_with_retry(
             api_call,
@@ -242,7 +240,6 @@ class G3BatchPredictor:
 
         # Function to try a specific sample size with retry logic
         async def try_sample_size(num_sample):
-            print(f"Starting prediction with {num_sample} samples...")
             while True:
                 prediction = await self.llm_predict(
                     model_name=model_name,
@@ -268,7 +265,9 @@ class G3BatchPredictor:
         print(f"🚀 Running {len(num_samples)} sample sizes in parallel: {num_samples}")
 
         tasks = [try_sample_size(num_sample) for num_sample in num_samples]
-        results = await atqdm.gather(*tasks, desc="🔄 Running parallel predictions")
+        results = await atqdm.gather(
+            *tasks, desc="🔄 Running diversification predictions"
+        )
 
         # Build predictions dictionary from parallel results
         predictions_dict = {}
@@ -353,16 +352,14 @@ class G3BatchPredictor:
                 ),
             )
 
-            # Use the parsed response directly
-            if response.parsed and isinstance(response.parsed, GPSPrediction):
-                return response.parsed.dict()
-            else:
-                print(
-                    "⚠️ Failed to get valid structured location response, returning empty dict for retry"
-                )
-                if response.text:
-                    print(f"Raw response (first 1000 chars): {response.text[:1000]}")
-                return {}
+            raw_text = response.text.strip() if response.text is not None else ""
+            parsed_json = extract_and_parse_json(raw_text)
+
+            try:
+                validated = GPSPrediction.model_validate(parsed_json)
+                return validated.model_dump()
+            except (ValidationError, ValueError):
+                raise ValueError("Empty or invalid LLM response")
 
         return await handle_async_api_call_with_retry(
             api_call,
@@ -435,15 +432,14 @@ class G3BatchPredictor:
                 ),
             )
 
-            # Use the parsed response directly
-            if response.parsed and isinstance(response.parsed, LocationPrediction):
-                print("✅ Verification prediction successful")
-                return response.parsed.dict()
-            else:
-                print("⚠️ Invalid or empty verification response format, retrying...")
-                if response.text:
-                    print(f"Raw response (first 1000 chars): {response.text[:1000]}")
-                return {}  # Return empty dict to trigger retry
+            raw_text = response.text.strip() if response.text is not None else ""
+            parsed_json = extract_and_parse_json(raw_text)
+
+            try:
+                validated = LocationPrediction.model_validate(parsed_json)
+                return validated.model_dump()
+            except (ValidationError, ValueError):
+                return {}
 
         return await handle_async_api_call_with_retry(
             api_call,
@@ -471,7 +467,7 @@ class G3BatchPredictor:
             dict: Final prediction with latitude, longitude, location, reason, and evidence
         """
         print(f"🚀 Starting multi-modal prediction pipeline with model: {model_name}")
-        # await self.data_processor.preprocess_input_data()
+        await self.data_processor.preprocess_input_data()
         # Step 1: Run diversification prediction (this is already parallel internally)
         print(
             f"\n🔄 Running diversification prediction for Image={image_prediction}, Text={text_prediction}..."

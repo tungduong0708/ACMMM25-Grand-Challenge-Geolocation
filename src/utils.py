@@ -1,11 +1,11 @@
-
+import json
 import torch
 import torch.nn as nn
 import requests
 import numpy as np
 from PIL import Image
 from pathlib import Path
-from typing import List, Optional, Tuple, Union, Callable, Any
+from typing import List, Optional, Tuple, Union, Callable, Any, Dict
 import asyncio
 import logging
 
@@ -170,6 +170,7 @@ def is_retryable_error(error: Exception) -> bool:
         "remoteprotocolerror",
         "sslerror",
         "tlserror",
+        "valueerror",  
     }
 
     error_type = type(error).__name__.lower()
@@ -226,4 +227,34 @@ async def handle_async_api_call_with_retry(
         return fallback_result
 
     logger.error(f"No fallback result provided for {error_context}.")
+    return {}
+
+def extract_and_parse_json(raw_text: str) -> Dict[str, Any]:
+    """
+    Extract and parse the first JSON object found in raw_text.
+    Only returns a dict; falls back to {} on failure or if parsed value isn't a dict.
+
+    Args:
+        raw_text (str): Raw text (e.g., from an LLM response)
+
+    Returns:
+        Dict[str, Any]: Parsed JSON dict, or {} if none valid is found.
+    """
+    start = raw_text.find("{")
+    end = raw_text.rfind("}")
+
+    if start == -1 or end == -1 or end <= start:
+        print("⚠️ No JSON object found. Snippet:", raw_text[:200])
+        return {}
+
+    snippet = raw_text[start : end + 1]
+
+    try:
+        parsed = json.loads(snippet)
+        if isinstance(parsed, dict):
+            return parsed
+        print("⚠️ JSON parsed but not a dict—got type:", type(parsed).__name__)
+    except json.JSONDecodeError as e:
+        print("⚠️ JSON decoding error:", e)
+
     return {}
