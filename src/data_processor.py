@@ -10,14 +10,13 @@ from dotenv import dotenv_values
 from PIL import Image
 from torch import nn
 
-from prompt.fetch.content_fetch import fetch_links_to_json
-from prompt.fetch.satellite_fetch import fetch_satellite_image
-from prompt.preprocess.keyframe_extract import extract_and_save_keyframes
-from prompt.preprocess.video_transcribe import transcribe_video_directory
-from prompt.search.text_search import text_search_image
-from prompt.search.image_search import image_search_directory
-from prompt.search.index_search import save_results_to_json, search_index_directory
-from prompt.search.text_search import text_search_link
+from .prompt.fetch.content_fetch import fetch_links_to_json
+from .prompt.fetch.satellite_fetch import fetch_satellite_image
+from .prompt.preprocess.keyframe_extract import extract_and_save_keyframes
+from .prompt.preprocess.video_transcribe import transcribe_video_directory
+from .prompt.search.image_search import image_search_directory
+from .prompt.search.index_search import save_results_to_json, search_index_directory
+from .prompt.search.text_search import text_search_image, text_search_link
 
 logger = logging.getLogger(__name__)
 

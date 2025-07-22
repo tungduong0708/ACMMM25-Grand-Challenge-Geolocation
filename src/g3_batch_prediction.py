@@ -1,19 +1,21 @@
-import os
 import asyncio
 import json
 import logging
+import os
 from pathlib import Path
-from typing import Optional
+
 import numpy as np
 import torch
-from tqdm.asyncio import tqdm as atqdm
 import yaml
+from dotenv import dotenv_values
 from google import genai
 from google.genai import types
 from pydantic import ValidationError
-from dotenv import dotenv_values
+from tqdm.asyncio import tqdm as atqdm
 
-from prompt import (
+from .data_processor import DataProcessor
+from .g3.G3 import G3
+from .prompt import (
     Evidence,
     GPSPrediction,
     LocationPrediction,
@@ -21,16 +23,13 @@ from prompt import (
     location_prompt,
     verification_prompt,
 )
-
-from utils import (
-    get_gps_from_location,
+from .utils import (
     calculate_similarity_scores,
-    handle_async_api_call_with_retry,
     extract_and_parse_json,
+    get_gps_from_location,
+    handle_async_api_call_with_retry,
     image_to_base64,
 )
-from data_processor import DataProcessor
-from g3.G3 import G3
 
 
 class G3BatchPredictor:
@@ -136,8 +135,8 @@ class G3BatchPredictor:
     async def llm_predict(
         self,
         model_name: str = "gemini-2.5-pro",
-        n_search: Optional[int] = None,
-        n_coords: Optional[int] = None,
+        n_search: int | None = None,
+        n_coords: int | None = None,
         image_prediction: bool = True,
         text_prediction: bool = True,
     ) -> LocationPrediction:

@@ -1,61 +1,72 @@
+import json
+import os
+import shutil
+import uuid
 from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import Annotated
 
 import torch
-from fastapi import FastAPI
+from fastapi import FastAPI, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
 
-from g3.g3_simple_prediction import G3Predictor
-
-base_path = Path(__file__).parent
+from src.g3_batch_prediction import G3BatchPredictor
 
 
-class PredictRequest(BaseModel):
-    image: Annotated[
+class EvidenceResponse(BaseModel):
+    analysis: Annotated[
         str,
-        Field(
-            description="Base64-encoded input image.",
-        ),
+        Field(description="A supporting analysis for the prediction."),
     ]
+    references: Annotated[
+        list[str],
+        Field(description="Links or base64-encoded JPEG supporting the analysis."),
+    ] = []
 
 
-class PredictResponse(BaseModel):
-    lat: Annotated[
+class LocationPredictionResponse(BaseModel):
+    latitude: Annotated[
         float,
-        Field(
-            ge=-90.0,
-            le=90.0,
-            description="Predicted latitude of the image, in degree.",
-        ),
+        Field(description="Latitude of the predicted location, in degree."),
     ]
-    lon: Annotated[
+    longitude: Annotated[
         float,
-        Field(
-            ge=-180.0,
-            le=180.0,
-            description="Predicted longitude of the image, in degree.",
-        ),
+        Field(description="Longitude of the predicted location, in degree."),
+    ]
+    location: Annotated[
+        str,
+        Field(description="Textual description of the predicted location."),
+    ]
+    evidence: Annotated[
+        list[EvidenceResponse],
+        Field(description="List of supporting analyses for the prediction."),
     ]
 
 
-predictor: G3Predictor
+class PredictionResponse(BaseModel):
+    prediction: Annotated[
+        LocationPredictionResponse,
+        Field(description="The location prediction and accompanying analysis."),
+    ]
+    transcript: Annotated[
+        str | None,
+        Field(description="The extracted and concatenated transcripts, if any."),
+    ] = None
+
+
+predictor: G3BatchPredictor
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI):
-    global predictor
+async def lifespan(app: FastAPI):
+    with open("openapi.json", "wt") as api_file:
+        json.dump(app.openapi(), api_file, indent=4)
 
-    checkpoint_path = (
-        base_path / "g3/checkpoints/mercator_finetune_weight.pth"
-    ).resolve()
-    index_path = (base_path / "g3/index/G3.index").resolve()
-
-    predictor = G3Predictor(
-        checkpoint_path=checkpoint_path.as_posix(),
-        device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-        index_path=index_path.as_posix(),
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = (
+        "acmmm2025-grand-challenge-gg-credentials.json"
     )
+
+    global predictor
+    predictor = G3BatchPredictor(device="cuda" if torch.cuda.is_available() else "cpu")
 
     yield
 
@@ -70,12 +81,47 @@ app = FastAPI(
 )
 
 
-@app.post("/g3/predict")
-def predict_endpoint(request: PredictRequest) -> PredictResponse:
-    gps = predictor.predict(
-        base64_image=request.image,
-        database_csv_path=(base_path / "g3/data/mp16/MP16_Pro_filtered.csv")
-        .resolve()
-        .as_posix(),
+@app.post(
+    "/g3/predict",
+    description="Provide location prediction.",
+)
+async def predict_endpoint(
+    files: Annotated[
+        list[UploadFile],
+        File(description="Input images, videos and metadata json."),
+    ],
+) -> PredictionResponse:
+    # Write files to disk
+    try:
+        for file in files:
+            filename = file.filename if file.filename is not None else uuid.uuid4().hex
+            filepath = predictor.input_dir / filename
+            with open(filepath, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save file: {e}",
+        )
+
+    # Get prediction
+    result = await predictor.predict(model_name="gemini-2.5-pro")
+    response = predictor.get_response(result)
+    prediction = LocationPredictionResponse(
+        latitude=response.latitude,
+        longitude=response.longitude,
+        location=response.location,
+        evidence=[
+            EvidenceResponse(analysis=ev.analysis, references=ev.references)
+            for ev in response.evidence
+        ],
     )
-    return PredictResponse(lat=gps[0], lon=gps[1])
+    return PredictionResponse(prediction=prediction, transcript=None)
+
+
+@app.get(
+    "/g3/openapi",
+    description="Provide the OpenAPI JSON describing this service's endpoints.",
+)
+async def openapi():
+    return app.openapi()

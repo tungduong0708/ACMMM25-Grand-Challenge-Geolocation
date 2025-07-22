@@ -1,0 +1,217 @@
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "G3",
+        "description": "An endpoint to predict GPS coordinate from static image, using G3 Framework.",
+        "version": "0.1.0"
+    },
+    "paths": {
+        "/g3/predict": {
+            "post": {
+                "summary": "Predict Endpoint",
+                "description": "Provide location prediction.",
+                "operationId": "predict_endpoint_g3_predict_post",
+                "requestBody": {
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Body_predict_endpoint_g3_predict_post"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PredictionResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/g3/openapi": {
+            "get": {
+                "summary": "Openapi",
+                "description": "Provide the OpenAPI JSON describing this service's endpoints.",
+                "operationId": "openapi_g3_openapi_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "Body_predict_endpoint_g3_predict_post": {
+                "properties": {
+                    "files": {
+                        "items": {
+                            "type": "string",
+                            "format": "binary"
+                        },
+                        "type": "array",
+                        "title": "Files",
+                        "description": "Input images, videos and metadata json."
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "files"
+                ],
+                "title": "Body_predict_endpoint_g3_predict_post"
+            },
+            "EvidenceResponse": {
+                "properties": {
+                    "analysis": {
+                        "type": "string",
+                        "title": "Analysis",
+                        "description": "A supporting analysis for the prediction."
+                    },
+                    "references": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "References",
+                        "description": "Links or base64-encoded JPEG supporting the analysis.",
+                        "default": []
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "analysis"
+                ],
+                "title": "EvidenceResponse"
+            },
+            "HTTPValidationError": {
+                "properties": {
+                    "detail": {
+                        "items": {
+                            "$ref": "#/components/schemas/ValidationError"
+                        },
+                        "type": "array",
+                        "title": "Detail"
+                    }
+                },
+                "type": "object",
+                "title": "HTTPValidationError"
+            },
+            "LocationPredictionResponse": {
+                "properties": {
+                    "latitude": {
+                        "type": "number",
+                        "title": "Latitude",
+                        "description": "Latitude of the predicted location, in degree."
+                    },
+                    "longitude": {
+                        "type": "number",
+                        "title": "Longitude",
+                        "description": "Longitude of the predicted location, in degree."
+                    },
+                    "location": {
+                        "type": "string",
+                        "title": "Location",
+                        "description": "Textual description of the predicted location."
+                    },
+                    "evidence": {
+                        "items": {
+                            "$ref": "#/components/schemas/EvidenceResponse"
+                        },
+                        "type": "array",
+                        "title": "Evidence",
+                        "description": "List of supporting analyses for the prediction."
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "latitude",
+                    "longitude",
+                    "location",
+                    "evidence"
+                ],
+                "title": "LocationPredictionResponse"
+            },
+            "PredictionResponse": {
+                "properties": {
+                    "prediction": {
+                        "$ref": "#/components/schemas/LocationPredictionResponse",
+                        "description": "The location prediction and accompanying analysis."
+                    },
+                    "transcript": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Transcript",
+                        "description": "The extracted and concatenated transcripts, if any."
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "prediction"
+                ],
+                "title": "PredictionResponse"
+            },
+            "ValidationError": {
+                "properties": {
+                    "loc": {
+                        "items": {
+                            "anyOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "integer"
+                                }
+                            ]
+                        },
+                        "type": "array",
+                        "title": "Location"
+                    },
+                    "msg": {
+                        "type": "string",
+                        "title": "Message"
+                    },
+                    "type": {
+                        "type": "string",
+                        "title": "Error Type"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "loc",
+                    "msg",
+                    "type"
+                ],
+                "title": "ValidationError"
+            }
+        }
+    }
+}
