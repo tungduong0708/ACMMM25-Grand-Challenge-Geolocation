@@ -18,7 +18,7 @@ from .prompt.search.image_search import image_search_directory
 from .prompt.search.index_search import save_results_to_json, search_index_directory
 from .prompt.search.text_search import text_search_image, text_search_link
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uvicorn.error")
 
 
 class DataProcessor:

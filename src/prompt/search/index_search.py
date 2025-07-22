@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from pathlib import Path
 
@@ -6,6 +7,8 @@ import numpy as np
 import pandas as pd
 import torch
 from PIL import Image
+
+logger = logging.getLogger("uvicorn.error")
 
 
 def search_index(model, rgb_image, device, index, top_k=20):
@@ -22,7 +25,7 @@ def search_index(model, rgb_image, device, index, top_k=20):
     Returns:
         tuple: (D, I, D_reverse, I_reverse) - distances and indices for positive and negative embeddings.
     """
-    print("Searching FAISS index...")
+    logger.info("Searching FAISS index...")
     image = model.vision_processor(images=rgb_image, return_tensors="pt")[
         "pixel_values"
     ].reshape(-1, 224, 224)
@@ -99,7 +102,7 @@ def get_gps_coordinates(I, I_reverse, database_csv_path):
                     lon = float(chunk.loc[ridx, "LON"])
                     reverse_gps.append((lat, lon))
     except Exception as e:
-        print(f"⚠️ Error loading GPS coordinates from database: {e}")
+        logger.error(f"⚠️ Error loading GPS coordinates from database: {e}")
 
     return candidates_gps, reverse_gps
 

@@ -13,6 +13,8 @@ import whisper
 from moviepy import *
 from open_clip import create_model_and_transforms
 
+logger = logging.getLogger("uvicorn.error")
+
 
 def extract_audio(video_path: str, output_dir: str) -> str:
     """
@@ -43,7 +45,7 @@ def extract_audio(video_path: str, output_dir: str) -> str:
         return str(audio_path)
 
     except Exception as e:
-        print(f"Error extracting audio: {str(e)}")
+        logger.error(f"Error extracting audio: {str(e)}")
         return ""
 
 
@@ -85,16 +87,16 @@ def transcribe_video(
     """
     audio_path = extract_audio(video_path, output_dir)
     if not audio_path:
-        print("Audio extraction failed. No audio file created.")
+        logger.error("Audio extraction failed. No audio file created.")
         return
 
-    print(f"Audio extracted to: {audio_path}")
+    logger.info(f"Audio extracted to: {audio_path}")
     transcript_text = transcribe_audio(audio_path, model_name=model_name)
 
     transcript_path = Path(output_dir) / f"{Path(video_path).stem}_transcript.txt"
     with open(transcript_path, "w", encoding="utf-8") as f:
         f.write(transcript_text)
-    print(f"Transcript saved to: {transcript_path}")
+    logger.info(f"Transcript saved to: {transcript_path}")
 
 
 def transcribe_video_directory(
@@ -115,17 +117,18 @@ def transcribe_video_directory(
     """
     video_extensions = {".mp4", ".avi", ".mov", ".mkv"}
     os.makedirs(output_dir, exist_ok=True)
-    
+
     video_files = [
-        f for f in Path(video_dir).glob("*")
+        f
+        for f in Path(video_dir).glob("*")
         if f.is_file() and f.suffix.lower() in video_extensions
     ]
 
     if not video_files:
-        print(f"No video files found in directory: {video_dir}")
+        logger.info(f"No video files found in directory: {video_dir}")
 
     for video_file in video_files:
-        print(f"Processing video: {video_file}")
+        logger.info(f"Processing video: {video_file}")
         transcribe_video(str(video_file), output_dir, model_name=model_name)
 
 

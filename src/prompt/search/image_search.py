@@ -1,6 +1,7 @@
 import argparse
 import base64
 import json
+import logging
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -15,6 +16,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 load_dotenv()
+logger = logging.getLogger("uvicorn.error")
 
 # GOOGLE CLOUD VISION API
 
@@ -77,7 +79,7 @@ def annotate_directory(directory: str) -> list[vision.WebDetection]:
     # Process images in batches of 16
     for i in range(0, len(image_files), batch_size):
         batch_files = image_files[i : i + batch_size]
-        print(
+        logger.info(
             f"Processing batch {i // batch_size + 1}/{(len(image_files) + batch_size - 1) // batch_size} ({len(batch_files)} images)..."
         )
 
@@ -90,7 +92,7 @@ def annotate_directory(directory: str) -> list[vision.WebDetection]:
                     image = vision.Image(content=content)
                     image_requests.append(image)
             except Exception as e:
-                print(f"⚠️ Warning: Failed to read image {file_path}: {e}")
+                logger.warning(f"⚠️ Failed to read image {file_path}: {e}")
                 # Add a placeholder to maintain order
                 image_requests.append(None)
 
@@ -103,7 +105,7 @@ def annotate_directory(directory: str) -> list[vision.WebDetection]:
                 valid_indices.append(idx)
 
         if not valid_requests:
-            print(f"⚠️ Warning: No valid images in batch {i // batch_size + 1}")
+            logger.warning(f"⚠️ No valid images in batch {i // batch_size + 1}")
             continue
 
         try:
@@ -137,10 +139,10 @@ def annotate_directory(directory: str) -> list[vision.WebDetection]:
             )
 
         except Exception as e:
-            print(f"⚠️ Warning: Batch {i // batch_size + 1} failed: {e}")
+            logger.warning(f"⚠️ Batch {i // batch_size + 1} failed: {e}")
             continue
 
-    print(
+    logger.info(
         f"✅ Successfully processed {len(all_web_detections)} images out of {len(image_files)} total"
     )
     return all_web_detections
@@ -239,7 +241,7 @@ def search_with_scrapingdog_lens(
     """
     try:
         image_url = upload_image_to_imgbb(image_path, imgbb_key)
-        print(f"Image uploaded to ImgBB: {image_url}")
+        logger.info(f"Image uploaded to ImgBB: {image_url}")
 
         lens_url = f"https://lens.google.com/uploadbyurl?url={image_url}"
         params = {
@@ -258,7 +260,7 @@ def search_with_scrapingdog_lens(
                 resp.raise_for_status()
                 return resp.json()
             except requests.exceptions.RequestException as e:
-                print(
+                logger.warning(
                     f"⚠️ ScrapingDog attempt {attempt + 1}/3 failed for {os.path.basename(image_path)}: {e}"
                 )
                 if attempt < 2:  # Don't sleep on the last attempt
@@ -266,13 +268,13 @@ def search_with_scrapingdog_lens(
                 continue
 
         # All retries failed
-        print(
+        logger.error(
             f"❌ All 3 ScrapingDog attempts failed for {os.path.basename(image_path)}"
         )
         return {"lens_results": []}
 
     except Exception as e:
-        print(f"⚠️ ScrapingDog API unexpected error for {image_path}: {e}")
+        logger.warning(f"⚠️ ScrapingDog API unexpected error for {image_path}: {e}")
         return {"lens_results": []}
 
 
@@ -320,13 +322,13 @@ def process_single_image(image_path: str, imgbb_key: str, scrapingdog_key: str) 
         }
 
         with print_lock:
-            print(f"✅ Completed processing {os.path.basename(image_path)}")
+            logger.info(f"✅ Completed processing {os.path.basename(image_path)}")
 
         return result
 
     except Exception as e:
         with print_lock:
-            print(f"❌ Error processing {os.path.basename(image_path)}: {e}")
+            logger.error(f"❌ Error processing {os.path.basename(image_path)}: {e}")
         return {
             "image_path": os.path.basename(image_path),
             "vision_result": [],
@@ -368,10 +370,10 @@ def image_search_directory(
             image_files.append(file_path)
 
     if not image_files:
-        print("No image files found in the directory.")
+        logger.info("No image files found in the directory.")
         return
 
-    print(
+    logger.info(
         f"Found {len(image_files)} image files. Processing with {max_workers} parallel workers..."
     )
 
@@ -397,13 +399,15 @@ def image_search_directory(
                 completed_count += 1
 
                 with print_lock:
-                    print(
+                    logger.info(
                         f"Progress: {completed_count}/{len(image_files)} images completed"
                     )
 
             except Exception as e:
                 with print_lock:
-                    print(f"❌ Failed to process {os.path.basename(image_path)}: {e}")
+                    logger.error(
+                        f"❌ Failed to process {os.path.basename(image_path)}: {e}"
+                    )
                 # Add error result
                 search_results.append(
                     {
@@ -425,7 +429,7 @@ def image_search_directory(
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(search_results, f, ensure_ascii=False, indent=2)
 
-    print(f"✅ Saved {len(search_results)} results to {out_path}")
+    logger.info(f"✅ Saved {len(search_results)} results to {out_path}")
 
 
 if __name__ == "__main__":

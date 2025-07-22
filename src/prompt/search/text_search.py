@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import re
 import time
@@ -11,6 +12,7 @@ import pandas as pd
 from dotenv import load_dotenv
 
 load_dotenv()
+logger = logging.getLogger("uvicorn.error")
 
 
 def retry_request(func, max_retries=3, base_delay=2.0):
@@ -34,27 +36,29 @@ def retry_request(func, max_retries=3, base_delay=2.0):
         except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.TimeoutException) as e:
             if attempt < max_retries - 1:
                 delay = base_delay * (2**attempt)
-                print(
+                logger.warning(
                     f"⚠️ Timeout error (attempt {attempt + 1}/{max_retries}). Retrying in {delay}s..."
                 )
                 time.sleep(delay)
                 continue
             else:
-                print(f"❌ Max retries ({max_retries}) exceeded for timeout error.")
+                logger.error(
+                    f"❌ Max retries ({max_retries}) exceeded for timeout error."
+                )
                 raise e
         except httpx.HTTPStatusError as e:
             if e.response.status_code in [500, 502, 503, 504]:
                 if attempt < max_retries - 1:
                     delay = base_delay * (2**attempt)
-                    print(
+                    logger.warning(
                         f"⚠️ Server error {e.response.status_code} (attempt {attempt + 1}/{max_retries}). Retrying in {delay}s..."
                     )
                     time.sleep(delay)
                     continue
-            print(f"❌ HTTP error {e.response.status_code}: {e}")
+            logger.error(f"❌ HTTP error {e.response.status_code}: {e}")
             raise e
         except Exception as e:
-            print(f"❌ Unexpected error: {e}")
+            logger.error(f"❌ Unexpected error: {e}")
             raise e
 
     # Should never reach here
@@ -120,13 +124,13 @@ def text_search_image(
             )
             response.raise_for_status()
         except Exception as e:
-            print(f"❌ Failed to search for images after retries: {e}")
+            logger.error(f"❌ Failed to search for images after retries: {e}")
             break
 
         results = response.json().get("items", [])
 
         if not results:
-            print("No more results from API")
+            logger.info("No more results from API")
             break
 
         for item in results:
@@ -143,7 +147,7 @@ def text_search_image(
                 try:
                     ext = extension_from_content_type(content_type)
                 except ValueError as e:
-                    print(f"Skipping {img_url}: {e}")
+                    logger.info(f"Skipping {img_url}: {e}")
                     continue
 
                 filename = os.path.join(output_dir, f"image_{idx:03d}.{ext}")
@@ -154,9 +158,9 @@ def text_search_image(
                 if len(downloaded_files) >= num_images:
                     break
             except httpx.HTTPError as e:
-                print(f"HTTP error downloading {img_url}: {e}")
+                logger.error(f"HTTP error downloading {img_url}: {e}")
             except Exception as e:
-                print(f"Failed to download {img_url}: {e}")
+                logger.error(f"Failed to download {img_url}: {e}")
 
         start += 10
 
@@ -228,7 +232,9 @@ def text_search_link(
 
             items = data.get("items", [])
             if not items:
-                print(f"No more results available. Retrieved {len(links)} results.")
+                logger.info(
+                    f"No more results available. Retrieved {len(links)} results."
+                )
                 break
 
             links.extend([item.get("link", "") for item in items if "link" in item])
@@ -237,10 +243,10 @@ def text_search_link(
                 break
 
         except httpx.HTTPError as e:
-            print(f"HTTP error during search: {e}")
+            logger.error(f"HTTP error during search: {e}")
             break
         except Exception as e:
-            print(f"Error during search: {e}")
+            logger.error(f"Error during search: {e}")
             break
 
         start += 10
@@ -256,7 +262,7 @@ def text_search_link(
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(search_results, f, indent=2, ensure_ascii=False)
 
-    print(f"✅ Saved {len(links)} search results to: {output_path}")
+    logger.info(f"✅ Saved {len(links)} search results to: {output_path}")
     return output_path
 
 

@@ -1,6 +1,10 @@
+import logging
+
 import httpx
 from geopy import Point
 from geopy.distance import distance
+
+logger = logging.getLogger("uvicorn.error")
 
 
 def meter_offsets(lat: float, lon: float, extend: float) -> tuple[float, float]:
@@ -47,7 +51,7 @@ def fetch_satellite_image(
 
     # Retry up to 3 times
     for attempt in range(3):
-        print(f"Attempt {attempt + 1}/3 to fetch satellite image...")
+        logger.info(f"Attempt {attempt + 1}/3 to fetch satellite image...")
 
         # Try descending sizes until success
         size = 1024
@@ -64,23 +68,23 @@ def fetch_satellite_image(
                 if response.status_code == 200:
                     with open(output_path, "wb") as f:
                         f.write(response.content)
-                    print(f"Saved Esri image to {output_path} ({size}x{size})")
+                    logger.info(f"Saved Esri image to {output_path} ({size}x{size})")
                     return
                 else:
-                    print(
+                    logger.info(
                         f"Failed at size {size} (status {response.status_code}), trying {size // 2}"
                     )
                     size //= 2
             except Exception as e:
-                print(f"Network error at size {size}: {e}, trying {size // 2}")
+                logger.error(f"Network error at size {size}: {e}, trying {size // 2}")
                 size //= 2
 
         # If this attempt failed for all sizes, log and continue to next attempt
         if attempt < 2:  # Don't print this message on the last attempt
-            print(f"Attempt {attempt + 1} failed for all sizes, retrying...")
+            logger.info(f"Attempt {attempt + 1} failed for all sizes, retrying...")
 
     # If all attempts fail
-    print("Unable to fetch Esri imagery: all retry attempts failed.")
+    logger.warning("Unable to fetch Esri imagery: all retry attempts failed.")
 
 
 # Example usage:

@@ -1,14 +1,14 @@
+import logging
 import os
+
 import cv2
 import numpy as np
-import logging
-from sklearn.metrics import silhouette_score
-from scipy.spatial.distance import cdist
 from google.cloud import videointelligence_v1 as vi
+from scipy.spatial.distance import cdist
+from sklearn.metrics import silhouette_score
 
 # Set up logger
-logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("uvicorn.error")
 
 
 def detect_shot_intervals_local(video_path: str) -> list[tuple[float, float]]:

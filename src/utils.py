@@ -1,17 +1,18 @@
-import json
+import asyncio
 import base64
+import json
+import logging
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar, Union
+
+import numpy as np
+import requests
 import torch
 import torch.nn as nn
-import requests
-import numpy as np
 from PIL import Image
-from pathlib import Path
-from typing import List, Optional, Tuple, Union, Callable, Any, Dict, TypeVar
-import asyncio
-import logging
 
 # Set up logger
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uvicorn.error")
 
 T = TypeVar("T")
 
@@ -272,7 +273,7 @@ def extract_and_parse_json(raw_text: str) -> Dict[str, Any]:
     end = raw_text.rfind("}")
 
     if start == -1 or end == -1 or end <= start:
-        print("⚠️ No JSON object found. Snippet:", raw_text[:200])
+        logger.error("⚠️ No JSON object found. Snippet:", raw_text[:200])
         return {}
 
     snippet = raw_text[start : end + 1]
@@ -281,9 +282,9 @@ def extract_and_parse_json(raw_text: str) -> Dict[str, Any]:
         parsed = json.loads(snippet)
         if isinstance(parsed, dict):
             return parsed
-        print("⚠️ JSON parsed but not a dict—got type:", type(parsed).__name__)
+        logger.error("⚠️ JSON parsed but not a dict—got type:", type(parsed).__name__)
     except json.JSONDecodeError as e:
-        print("⚠️ JSON decoding error:", e)
+        logger.error("⚠️ JSON decoding error:", e)
 
     return {}
 

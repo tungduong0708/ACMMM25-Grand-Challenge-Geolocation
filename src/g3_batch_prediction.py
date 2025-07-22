@@ -31,6 +31,8 @@ from .utils import (
     image_to_base64,
 )
 
+logger = logging.getLogger("uvicorn.error")
+
 
 class G3BatchPredictor:
     """
@@ -128,7 +130,7 @@ class G3BatchPredictor:
         )
         self.model.to(self.device)
         self.model.eval()
-        logging.info(
+        logger.info(
             f"✅ Successfully loaded G3 model checkpoint from: {self.checkpoint_path}"
         )
 
@@ -242,13 +244,13 @@ class G3BatchPredictor:
                     coords = (prediction.latitude, prediction.longitude)
                     return (num_sample, coords, prediction)
                 else:
-                    print(
+                    logger.info(
                         f"Invalid or empty prediction format with {num_sample} samples, retrying..."
                     )
 
         # Run all sample sizes in parallel
         num_samples = [10, 15, 20]
-        logging.info(
+        logger.info(
             f"🚀 Running {len(num_samples)} sample sizes in parallel: {num_samples}"
         )
 
@@ -261,11 +263,11 @@ class G3BatchPredictor:
         predictions_dict = {}
         for num_sample, coords, prediction in results:
             predictions_dict[coords] = prediction
-            logging.info(f"✅ Collected prediction with {num_sample} samples: {coords}")
+            logger.info(f"✅ Collected prediction with {num_sample} samples: {coords}")
 
         # Convert predictions to coordinate list for similarity scoring
         predicted_coords = list(predictions_dict.keys())
-        logging.info(f"Predicted coordinates: {predicted_coords}")
+        logger.info(f"Predicted coordinates: {predicted_coords}")
 
         if not predicted_coords:
             raise ValueError("No valid predictions obtained from any sample size")
@@ -283,9 +285,9 @@ class G3BatchPredictor:
         best_coords = predicted_coords[best_idx]
         best_prediction = predictions_dict[best_coords]
 
-        logging.info(f"🎯 Best prediction selected: {best_coords}")
-        logging.info(f"   Similarity scores: {avg_similarities}")
-        logging.info(f"   Best index: {best_idx}")
+        logger.info(f"🎯 Best prediction selected: {best_coords}")
+        logger.info(f"   Similarity scores: {avg_similarities}")
+        logger.info(f"   Best index: {best_idx}")
 
         # print(json.dumps(best_prediction, indent=2))  # Commented out verbose output
 
@@ -311,7 +313,7 @@ class G3BatchPredictor:
 
         lat, lon = get_gps_from_location(location)
         if lat is not None and lon is not None:
-            logging.info(
+            logger.info(
                 f"Using GPS coordinates for location '{location}': ({lat}, {lon})"
             )
             return GPSPrediction(
@@ -457,12 +459,12 @@ class G3BatchPredictor:
         Returns:
             dict: Final prediction with latitude, longitude, location, reason, and evidence
         """
-        logging.info(
+        logger.info(
             f"🚀 Starting multi-modal prediction pipeline with model: {model_name}"
         )
         await self.data_processor.preprocess_input_data()
         # Step 1: Run diversification prediction (this is already parallel internally)
-        logging.info(
+        logger.info(
             f"\n🔄 Running diversification prediction for Image={image_prediction}, Text={text_prediction}..."
         )
         diversification_result = await self.diversification_predict(
@@ -476,7 +478,7 @@ class G3BatchPredictor:
             model_name=model_name, location=diversification_result.location
         )
 
-        logging.info("✅ Location prediction completed:")
+        logger.info("✅ Location prediction completed:")
 
         # Step 3: Update coordinates and evidence from location prediction
         result = diversification_result.model_copy()
@@ -499,7 +501,7 @@ class G3BatchPredictor:
         result.evidence.append(location_evidence)
 
         # Step 5: Run verification prediction
-        logging.info(
+        logger.info(
             f"\n🔄 Running verification prediction for Image={image_prediction}, Text={text_prediction}..."
         )
         result = await self.verification_predict(
@@ -509,7 +511,7 @@ class G3BatchPredictor:
             text_prediction=text_prediction,
         )
 
-        logging.info(
+        logger.info(
             f"\n🎯 Final prediction for Image={image_prediction}, Text={text_prediction}:"
         )
         # print(json.dumps(result, indent=2))  # Commented out verbose output
@@ -524,7 +526,6 @@ class G3BatchPredictor:
             for i, ref in enumerate(evidence.references):
                 if ref.startswith("image"):
                     evidence.references[i] = image_to_base64(self.image_dir / ref)
-                    print(ref)
         return prediction
 
 

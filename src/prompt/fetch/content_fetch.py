@@ -1,11 +1,13 @@
 import asyncio
 import json
+import logging
 from pathlib import Path
 from typing import Literal, TypedDict
 
 from playwright.async_api import Page, async_playwright
 
 READABILITY_JS_URL = "https://unpkg.com/@mozilla/readability@0.4.4/Readability.js"
+logger = logging.getLogger("uvicorn.error")
 
 
 class PageText(TypedDict):
@@ -106,7 +108,7 @@ async def fetch_links_to_json(
     Returns:
         None (saves results to JSON file)
     """
-    print(f"📥 Fetching content from {len(links)} links...")
+    logger.info(f"📥 Fetching content from {len(links)} links...")
 
     # Fetch content from all links
     results = await fetch_texts(links, headless=headless, wait_until=wait_until)
@@ -114,7 +116,7 @@ async def fetch_links_to_json(
     # Process results into the desired format
     json_data = []
     for i, (link, result) in enumerate(zip(links, results)):
-        print(f"  Processing {i + 1}/{len(links)}: {link}")
+        logger.info(f"  Processing {i + 1}/{len(links)}: {link}")
 
         if isinstance(result, BaseException):
             # Handle errors gracefully
@@ -127,8 +129,8 @@ async def fetch_links_to_json(
                     content[:max_content_length]
                     + "... [content truncated due to length limit]"
                 )
-                print(
-                    f"    ✂️ Content truncated from {len(result['text'])} to {max_content_length} characters"
+                logger.info(
+                    f"✂️ Content truncated from {len(result['text'])} to {max_content_length} characters"
                 )
 
             json_data.append({"link": link, "content": content})
@@ -141,14 +143,14 @@ async def fetch_links_to_json(
     with open(output_file, "w", encoding="utf-8") as f:
         json.dump(json_data, f, ensure_ascii=False, indent=2)
 
-    print(f"💾 Saved content from {len(links)} links to {output_path}")
+    logger.info(f"💾 Saved content from {len(links)} links to {output_path}")
 
     # Print summary
     successful = sum(
         1 for item in json_data if not item["content"].startswith("Error fetching")
     )
     failed = len(json_data) - successful
-    print(f"📊 Summary: {successful} successful, {failed} failed")
+    logger.info(f"📊 Summary: {successful} successful, {failed} failed")
 
 
 # Example usage
