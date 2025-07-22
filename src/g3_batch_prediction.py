@@ -3,6 +3,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import shutil
 
 import numpy as np
 import torch
@@ -528,6 +529,32 @@ class G3BatchPredictor:
                     evidence.references[i] = image_to_base64(self.image_dir / ref)
         return prediction
 
+    def get_transcript(self) -> str:
+        """
+        Get the transcript from the transcript files in the audio directory.
+        """
+        transcript = ""
+        for transcript_file in self.audio_dir.glob("*.txt"):
+            with open(transcript_file, "r", encoding="utf-8") as f:
+                logger.info(f"Reading transcript from {transcript_file.name}")
+                transcript_data = f.read().strip()
+                if transcript_data:
+                    transcript += f"Transcript for {transcript_file.name}\n"
+                    transcript += transcript_data
+        return transcript
+
+    def clear_directories(self):
+        """
+        Clear the input and prompt directories.
+        """
+        delete_dirs = [self.input_dir, self.prompt_dir]
+        for dir_path in delete_dirs:
+            if os.path.exists(dir_path):
+                shutil.rmtree(dir_path)
+                logger.info(f"Deleted folder: {dir_path}")
+            else:
+                logger.info(f"Folder does not exist: {dir_path}")
+
 
 if __name__ == "__main__":
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = (
@@ -553,15 +580,25 @@ if __name__ == "__main__":
 
             # Run prediction - always use the predict method for 3 modalities
             logging.info("\n🔄 Running complete multi-modal prediction pipeline...")
-            result = await predictor.predict(model_name="gemini-2.5-pro")
+            # result = await predictor.predict(model_name="gemini-2.5-pro")
 
-            with open("g3_batch_prediction_result.json", "w") as f:
-                json.dump(result.model_dump(), f, indent=2)
+            # with open("g3_batch_prediction_result.json", "w") as f:
+            #     json.dump(result.model_dump(), f, indent=2)
 
-            logging.info(json.dumps(result.model_dump(), indent=2))
-            result = predictor.get_response(result)
-            with open("g3_batch_prediction_result_base64.json", "w") as f:
-                json.dump(result.model_dump(), f, indent=2)
+            # logging.info(json.dumps(result.model_dump(), indent=2))
+            # result = predictor.get_response(result)
+            # with open("g3_batch_prediction_result_base64.json", "w") as f:
+            #     json.dump(result.model_dump(), f, indent=2)
+
+            transcript = predictor.get_transcript()
+            if transcript:
+                logging.info("\n📜 Transcript:")
+                logging.info(transcript)
+            else:
+                logging.info("\n📜 No transcript found.")
+
+            predictor.clear_directories()
+            logging.info("\n✅ Cleared input and prompt directories.")
 
             logging.info("\n🎉 Multi-modal prediction completed successfully!")
 

@@ -116,7 +116,11 @@ async def predict_endpoint(
             for ev in response.evidence
         ],
     )
-    return PredictionResponse(prediction=prediction, transcript=None)
+    # Get transcript if available
+    transcript = predictor.get_transcript()
+    # Clear directories
+    predictor.clear_directories()
+    return PredictionResponse(prediction=prediction, transcript=transcript)
 
 
 @app.get(
