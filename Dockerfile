@@ -6,6 +6,7 @@ RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
 
 COPY ./src /code/src
 RUN python /code/src/setup.py
+RUN playwright install chromium
 
 COPY ./app.py /code/app.py
 
