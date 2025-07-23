@@ -193,13 +193,3 @@ def extract_and_save_keyframes(
     cap.release()
     logger.info(f"Extraction complete. Total frames saved: {output_idx}")
     return output_idx
-
-
-if __name__ == "__main__":
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = (
-        "acmmm2025-grand-challenge-gg-credentials.json"
-    )
-    video_file = "C:\\Users\\tungd\\OneDrive - MSFT\\Second Year\\ML\\ACMMM25 - Grand Challenge on Multimedia Verification\\ACMMM25-Grand-Challenge-Geolocation\\src\\data\\input_data\\ID239\\ID239-1 drone-tunnel.mp4"
-    images_dir = "images"
-    os.makedirs(images_dir, exist_ok=True)
-    extract_and_save_keyframes(video_file, images_dir)

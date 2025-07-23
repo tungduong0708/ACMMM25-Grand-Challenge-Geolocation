@@ -151,20 +151,3 @@ async def fetch_links_to_json(
     )
     failed = len(json_data) - successful
     logger.info(f"📊 Summary: {successful} successful, {failed} failed")
-
-
-# Example usage
-if __name__ == "__main__":
-    # Example usage
-    test_links = [
-        "https://www.rainews.it/dl/img/2022/05/06/1651819610247_fermata_bus_Avdivka.jpg"
-    ]
-
-    # Run the async function
-    asyncio.run(
-        fetch_links_to_json(
-            links=test_links,
-            output_path="content_results.json",
-            max_content_length=5000,  # Limit content to 5000 characters per link
-        )
-    )

@@ -61,10 +61,6 @@ async def lifespan(app: FastAPI):
     with open("openapi.json", "wt") as api_file:
         json.dump(app.openapi(), api_file, indent=4)
 
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = (
-        "acmmm2025-grand-challenge-gg-credentials.json"
-    )
-
     global predictor
     predictor = G3BatchPredictor(device="cuda" if torch.cuda.is_available() else "cpu")
 
