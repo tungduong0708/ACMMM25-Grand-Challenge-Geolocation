@@ -9,6 +9,7 @@ RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
 COPY ./src /code/src
 RUN python /code/src/setup.py
 RUN playwright install chromium
+RUN playwright install-deps
 
 COPY ./app.py /code/app.py
 
