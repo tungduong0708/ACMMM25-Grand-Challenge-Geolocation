@@ -1,11 +1,11 @@
 import json
-import os
 import shutil
 import uuid
 from contextlib import asynccontextmanager
 from typing import Annotated
 
 import torch
+from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
 
@@ -58,6 +58,8 @@ predictor: G3BatchPredictor
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    load_dotenv()
+
     with open("openapi.json", "wt") as api_file:
         json.dump(app.openapi(), api_file, indent=4)
 

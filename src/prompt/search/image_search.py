@@ -1,4 +1,3 @@
-import argparse
 import base64
 import json
 import logging
@@ -9,12 +8,10 @@ from pathlib import Path
 from threading import Lock
 
 import requests
-from dotenv import load_dotenv
 from google.cloud import vision
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-load_dotenv()
 logger = logging.getLogger("uvicorn.error")
 
 # GOOGLE CLOUD VISION API

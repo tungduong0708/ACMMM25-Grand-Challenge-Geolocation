@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 import os
 import shutil
@@ -8,7 +7,6 @@ from pathlib import Path
 import numpy as np
 import torch
 import yaml
-from dotenv import dotenv_values
 from google import genai
 from google.genai import types
 from pydantic import ValidationError
@@ -63,7 +61,6 @@ class G3BatchPredictor:
             device (str): Device to run model on ("cuda" or "cpu")
             index_path (str): Path to FAISS index for RAG (required)
         """
-        self.env = dotenv_values(".env")
         self.device = torch.device(device)
         self.base_path = Path(__file__).parent
         self.checkpoint_path = self.base_path / checkpoint_path
@@ -175,7 +172,7 @@ class G3BatchPredictor:
                     image = types.Part.from_bytes(data=f.read(), mime_type="image/jpeg")
                 images.append(image)
 
-        client = genai.Client(api_key=self.env["GOOGLE_CLOUD_API_KEY"])
+        client = genai.Client(api_key=os.environ["GOOGLE_CLOUD_API_KEY"])
 
         async def api_call():
             loop = asyncio.get_event_loop()
@@ -333,7 +330,7 @@ class G3BatchPredictor:
             )
         else:
             prompt = location_prompt(location)
-            client = genai.Client(api_key=self.env["GOOGLE_CLOUD_API_KEY"])
+            client = genai.Client(api_key=os.environ["GOOGLE_CLOUD_API_KEY"])
 
             async def api_call():
                 # Run the synchronous API call in a thread executor to make it truly async
@@ -415,7 +412,7 @@ class G3BatchPredictor:
             text_prediction=text_prediction,
         )
 
-        client = genai.Client(api_key=self.env["GOOGLE_CLOUD_API_KEY"])
+        client = genai.Client(api_key=os.environ["GOOGLE_CLOUD_API_KEY"])
 
         async def api_call():
             # Run the synchronous API call in a thread executor to make it truly async
