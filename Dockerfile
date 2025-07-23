@@ -1,6 +1,8 @@
 FROM python:3.12
 WORKDIR /code
 
+RUN apt update && apt install -y ffmpeg
+
 COPY ./requirements.txt /code/requirements.txt
 RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
 
@@ -10,4 +12,5 @@ RUN playwright install chromium
 
 COPY ./app.py /code/app.py
 
-CMD ["fastapi", "run", "app.py", "--port", "80"]
+ENTRYPOINT ["fastapi", "run", "app.py"]
+CMD ["--port", "80"]
