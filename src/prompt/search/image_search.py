@@ -388,6 +388,9 @@ def image_search_directory(
     Returns:
         None
     """
+    EXCLUDE_DOMAIN = [
+        "youtube.com",
+    ]
     # Get all image files
     image_files = []
     for file_name in os.listdir(directory):
@@ -417,6 +420,10 @@ def image_search_directory(
         # Extract links from all web detections
         for detection in web_detections:
             links = get_image_links_vision(detection)
+            # Filter out links from excluded domains
+            links = [
+                link for link in links if not any(domain in link for domain in EXCLUDE_DOMAIN)
+            ]
             all_links.update(links)  # Add to set (automatically deduplicates)
 
         vision_links_count = len(all_links)
@@ -459,8 +466,11 @@ def image_search_directory(
                     image_path = future_to_image[future]
                     try:
                         result_links = future.result()
-                        initial_count = len(all_links)
-                        all_links.update(result_links)  # Add new links to the main set
+                        filtered_links = [
+                            link for link in result_links if not any(domain in link for domain in EXCLUDE_DOMAIN)
+                        ]
+                        initial_count = len(filtered_links)
+                        all_links.update(filtered_links)  # Add new links to the main set
                         scrapingdog_links_count += (
                             len(all_links) - initial_count
                         )  # Count new unique links added
