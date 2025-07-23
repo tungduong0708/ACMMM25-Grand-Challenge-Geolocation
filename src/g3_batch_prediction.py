@@ -2,8 +2,8 @@ import asyncio
 import json
 import logging
 import os
-from pathlib import Path
 import shutil
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -256,8 +256,19 @@ class G3BatchPredictor:
         )
 
         tasks = [try_sample_size(num_sample) for num_sample in num_samples]
+
+        class LW:
+            def write(self, msg: str) -> int:
+                logger.info(msg)
+                return len(msg)
+
+            def flush(self):
+                pass
+
         results = await atqdm.gather(
-            *tasks, desc="🔄 Running diversification predictions"
+            *tasks,
+            desc="🔄 Running diversification predictions",
+            file=LW(),
         )
 
         # Build predictions dictionary from parallel results

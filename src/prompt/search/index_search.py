@@ -193,23 +193,23 @@ if __name__ == "__main__":
     results = {"candidates_gps": candidates_gps, "reverse_gps": reverse_gps}
 
     output_path = "search_results.json"
-    save_results_to_json(results, output_path)
+    # save_results_to_json(results, output_path)
 
     # Directory search with priority example
-    prioritized_candidates_gps, prioritized_reverse_gps = search_index_directory(
-        model,
-        device,
-        index,
-        image_directory,
-        database_csv_path,
-        top_k,
-        max_elements=100,
-    )
+    # prioritized_candidates_gps, prioritized_reverse_gps = search_index_directory(
+    #     model,
+    #     device,
+    #     index,
+    #     image_directory,
+    #     database_csv_path,
+    #     top_k,
+    #     max_elements=100,
+    # )
 
-    prioritized_results = {
-        "candidates_gps": prioritized_candidates_gps,
-        "reverse_gps": prioritized_reverse_gps,
-    }
+    # prioritized_results = {
+    #     "candidates_gps": prioritized_candidates_gps,
+    #     "reverse_gps": prioritized_reverse_gps,
+    # }
 
     prioritized_output_path = "prioritized_directory_search_results.json"
-    save_results_to_json(prioritized_results, prioritized_output_path)
+    # save_results_to_json(prioritized_results, prioritized_output_path)
