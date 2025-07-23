@@ -591,15 +591,15 @@ if __name__ == "__main__":
 
             # Run prediction - always use the predict method for 3 modalities
             logging.info("\n🔄 Running complete multi-modal prediction pipeline...")
-            # result = await predictor.predict(model_name="gemini-2.5-pro")
+            result = await predictor.predict(model_name="gemini-2.5-pro")
 
-            # with open("g3_batch_prediction_result.json", "w") as f:
-            #     json.dump(result.model_dump(), f, indent=2)
+            with open("g3_batch_prediction_result.json", "w") as f:
+                json.dump(result.model_dump(), f, indent=2)
 
-            # logging.info(json.dumps(result.model_dump(), indent=2))
-            # result = predictor.get_response(result)
-            # with open("g3_batch_prediction_result_base64.json", "w") as f:
-            #     json.dump(result.model_dump(), f, indent=2)
+            logging.info(json.dumps(result.model_dump(), indent=2))
+            result = predictor.get_response(result)
+            with open("g3_batch_prediction_result_base64.json", "w") as f:
+                json.dump(result.model_dump(), f, indent=2)
 
             transcript = predictor.get_transcript()
             if transcript:
@@ -608,7 +608,7 @@ if __name__ == "__main__":
             else:
                 logging.info("\n📜 No transcript found.")
 
-            predictor.clear_directories()
+            # predictor.clear_directories()
             logging.info("\n✅ Cleared input and prompt directories.")
 
             logging.info("\n🎉 Multi-modal prediction completed successfully!")

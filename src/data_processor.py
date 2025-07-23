@@ -71,6 +71,7 @@ class DataProcessor:
         Put all images and keyframes into the prompt directory.
         """
         output_dir = self.image_dir
+        os.makedirs(output_dir, exist_ok=True)
 
         # Determine starting index based on existing files
         current_files = list(output_dir.glob("image_*.*"))
@@ -105,6 +106,7 @@ class DataProcessor:
         Save transcripts into the prompt directory.
         """
         audio_dir = self.audio_dir
+        os.makedirs(audio_dir, exist_ok=True)
 
         if audio_dir.is_dir() and any(audio_dir.iterdir()):
             logger.info(f"🔄 Found existing transcripts in directory: {audio_dir}")
@@ -138,6 +140,8 @@ class DataProcessor:
             filename="image_search.json",
             imgbb_key=self.env["IMGBB_API_KEY"],
             scrapingdog_key=self.env["SCRAPINGDOG_API_KEY"],
+            max_workers=4,
+            target_links=20
         )
         logger.info(f"✅ Successfully performed image search on: {image_dir}")
 
@@ -188,9 +192,7 @@ class DataProcessor:
                 self.__image_search()
             with open(image_search_file, "r") as f:
                 image_search_data = json.load(f)
-                for item in image_search_data:
-                    image_links.update(item.get("vision_result", []))
-                    image_links.update(item.get("scrapingdog_result", []))
+                image_links.update(image_search_data.get("all_links", []))
             logger.info(f"Found {len(image_links)} image links to fetch content from.")
             await fetch_and_save_links(image_links, "image_search_content.json")
 
@@ -317,6 +319,7 @@ class DataProcessor:
         - Fetch related link content from images.
         Save images and extracted keyframes into the output directory
         """
+        os.makedirs(self.prompt_dir, exist_ok=True)
         metadata_dest = self.prompt_dir / "metadata.json"
         if not metadata_dest.exists():
             for file in os.listdir(self.input_dir):

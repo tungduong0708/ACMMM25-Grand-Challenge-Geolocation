@@ -96,6 +96,7 @@ async def predict_endpoint(
         for file in files:
             filename = file.filename if file.filename is not None else uuid.uuid4().hex
             filepath = predictor.input_dir / filename
+            os.makedirs(predictor.input_dir, exist_ok=True)
             with open(filepath, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
     except Exception as e:

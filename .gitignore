@@ -7,6 +7,7 @@ checkpoints
 data
 
 # venv and dev stuff
+linuxenv
 myenv
 .venv
 .env

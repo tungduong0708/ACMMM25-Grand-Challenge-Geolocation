@@ -7,7 +7,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from threading import Lock
-from typing import Optional, Union
 
 import requests
 from dotenv import load_dotenv
@@ -285,6 +284,32 @@ def get_image_links_scrapingdog(search_results: dict, n_results: int = 5) -> lis
     ]
 
 
+def process_scrapingdog_only(image_path: str) -> list[str]:
+    """Process a single image with ScrapingDog API only."""
+    try:
+        scrapingdog_search_result = search_with_scrapingdog_lens(
+            image_path=image_path,
+            imgbb_key=imgbb_key,
+            scrapingdog_key=scrapingdog_key,
+        )
+        scrapingdog_result = get_image_links_scrapingdog(
+            scrapingdog_search_result, n_results=5
+        )
+
+        with print_lock:
+            logger.info(
+                f"✅ ScrapingDog completed for {os.path.basename(image_path)} - {len(scrapingdog_result)} links"
+            )
+
+        return scrapingdog_result
+    except Exception as e:
+        with print_lock:
+            logger.error(
+                f"❌ ScrapingDog error for {os.path.basename(image_path)}: {e}"
+            )
+        return []
+
+
 # Thread-safe print lock
 print_lock = Lock()
 
@@ -344,10 +369,12 @@ def image_search_directory(
     imgbb_key: str = "YOUR_IMGBB_API_KEY",
     scrapingdog_key: str = "YOUR_SCRAPINGDOG_API_KEY",
     max_workers: int = 4,
+    target_links: int = 20,
 ) -> None:
     """
-    Perform web detection on all image files in the given directory in parallel,
-    and save them to a single JSON file in the specified output directory.
+    Perform web detection with a two-phase approach:
+    1. Run Vision API on all images first using annotate_directory
+    2. If total unique links < target_links, run ScrapingDog on images until target is reached
 
     Args:
         directory (str): Path to the directory containing image files.
@@ -356,6 +383,7 @@ def image_search_directory(
         imgbb_key (str): ImgBB API key for image uploading.
         scrapingdog_key (str): ScrapingDog API key for lens search.
         max_workers (int): Maximum number of parallel workers.
+        target_links (int): Target number of unique links to collect.
 
     Returns:
         None
@@ -374,62 +402,122 @@ def image_search_directory(
         return
 
     logger.info(
-        f"Found {len(image_files)} image files. Processing with {max_workers} parallel workers..."
+        f"Found {len(image_files)} image files. Target: {target_links} unique links"
     )
 
-    search_results = []
-    completed_count = 0
+    # Phase 1: Run Vision API on all images using annotate_directory
+    logger.info("🔍 Phase 1: Running Vision API on all images...")
+    all_links = set()
+    vision_links_count = 0
 
-    # Process images in parallel
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        # Submit all tasks
-        future_to_image = {
-            executor.submit(
-                process_single_image, image_path, imgbb_key, scrapingdog_key
-            ): image_path
-            for image_path in image_files
-        }
+    try:
+        # Use the existing annotate_directory function for batch processing
+        web_detections = annotate_directory(directory)
 
-        # Collect results as they complete
-        for future in as_completed(future_to_image):
-            image_path = future_to_image[future]
-            try:
-                result = future.result()
-                search_results.append(result)
-                completed_count += 1
+        # Extract links from all web detections
+        for detection in web_detections:
+            links = get_image_links_vision(detection)
+            all_links.update(links)  # Add to set (automatically deduplicates)
 
-                with print_lock:
-                    logger.info(
-                        f"Progress: {completed_count}/{len(image_files)} images completed"
-                    )
+        vision_links_count = len(all_links)
+        logger.info(
+            f"✅ Phase 1 complete: {vision_links_count} unique links from Vision API"
+        )
 
-            except Exception as e:
-                with print_lock:
-                    logger.error(
-                        f"❌ Failed to process {os.path.basename(image_path)}: {e}"
-                    )
-                # Add error result
-                search_results.append(
-                    {
-                        "image_path": os.path.basename(image_path),
-                        "vision_result": [],
-                        "scrapingdog_result": [],
-                        "error": str(e),
-                    }
-                )
+    except Exception as e:
+        logger.error(f"❌ Vision API processing failed: {e}")
+        all_links = set()
+        vision_links_count = 0
 
-    # Sort results by image path for consistent ordering
-    search_results.sort(key=lambda x: x["image_path"])
+    # Phase 2: Run ScrapingDog if needed
+    scrapingdog_links_count = 0
+
+    if len(all_links) < target_links:
+        needed_links = target_links - len(all_links)
+        logger.info(
+            f"🔍 Phase 2: Need {needed_links} more links. Running ScrapingDog..."
+        )
+
+        # Check if API keys are available
+        if (
+            imgbb_key == "YOUR_IMGBB_API_KEY"
+            or scrapingdog_key == "YOUR_SCRAPINGDOG_API_KEY"
+        ):
+            logger.warning("⚠️ ScrapingDog API keys not available. Skipping Phase 2.")
+        else:
+            scrapingdog_completed = 0
+
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Submit ScrapingDog tasks for all images
+                future_to_image = {
+                    executor.submit(process_scrapingdog_only, image_path): image_path
+                    for image_path in image_files
+                }
+
+                # Collect ScrapingDog results until we have enough links
+                for future in as_completed(future_to_image):
+                    image_path = future_to_image[future]
+                    try:
+                        result_links = future.result()
+                        initial_count = len(all_links)
+                        all_links.update(result_links)  # Add new links to the main set
+                        scrapingdog_links_count += (
+                            len(all_links) - initial_count
+                        )  # Count new unique links added
+                        scrapingdog_completed += 1
+
+                        with print_lock:
+                            logger.info(
+                                f"ScrapingDog Progress: {scrapingdog_completed}/{len(image_files)} images, "
+                                f"{scrapingdog_links_count} new ScrapingDog links, {len(all_links)} total unique"
+                            )
+
+                        # Stop early if we have enough links
+                        if len(all_links) >= target_links:
+                            logger.info(
+                                f"🎯 Target reached! {len(all_links)} >= {target_links} links"
+                            )
+                            # Cancel remaining futures
+                            for remaining_future in future_to_image:
+                                if not remaining_future.done():
+                                    remaining_future.cancel()
+                            break
+
+                    except Exception as e:
+                        with print_lock:
+                            logger.error(
+                                f"❌ Failed ScrapingDog for {os.path.basename(image_path)}: {e}"
+                            )
+                        scrapingdog_completed += 1
+
+    # Prepare final results
+    total_unique_links = len(all_links)
+    all_links = list(all_links)[:target_links]
+    results = {
+        "all_links": all_links,
+        "total_unique_links": total_unique_links,
+        "target_achieved": total_unique_links >= target_links,
+        "summary": {
+            "images_processed": len(image_files),
+            "vision_links": vision_links_count,
+            "scrapingdog_links": scrapingdog_links_count,
+            "total_unique_links": total_unique_links,
+            "target_links": target_links,
+        },
+    }
 
     # Ensure the output directory exists
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
-    # Save parsed results to JSON file
+    # Save results to JSON file
     out_path = Path(output_dir) / filename
     with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(search_results, f, ensure_ascii=False, indent=2)
+        json.dump(results, f, ensure_ascii=False, indent=2)
 
-    logger.info(f"✅ Saved {len(search_results)} results to {out_path}")
+    logger.info(
+        f"✅ Saved results to {out_path}\n"
+        f"📊 Summary: {vision_links_count} Vision + {scrapingdog_links_count} ScrapingDog = {total_unique_links} total unique links"
+    )
 
 
 if __name__ == "__main__":
@@ -447,7 +535,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="g3/data/prompt_data",
+        default="src/prompt/search",
         help="Directory to save JSON output",
     )
     parser.add_argument(
@@ -455,6 +543,12 @@ if __name__ == "__main__":
         type=int,
         default=4,
         help="Maximum number of parallel workers (default: 4)",
+    )
+    parser.add_argument(
+        "--target_links",
+        type=int,
+        default=20,
+        help="Target number of unique links to collect (default: 20)",
     )
     args = parser.parse_args()
 
@@ -467,13 +561,13 @@ if __name__ == "__main__":
             imgbb_key == "YOUR_IMGBB_API_KEY"
             or scrapingdog_key == "YOUR_SCRAPINGDOG_API_KEY"
         ):
-            print(
+            logger.info(
                 "Warning: ImgBB and/or ScrapingDog API keys not found in environment variables."
             )
-            print(
+            logger.info(
                 "ScrapingDog search will be skipped. Only Google Vision API results will be available."
             )
-            print(
+            logger.info(
                 "To enable ScrapingDog search, set IMGBB_API_KEY and SCRAPINGDOG_API_KEY environment variables."
             )
 
@@ -483,6 +577,7 @@ if __name__ == "__main__":
             imgbb_key=imgbb_key,
             scrapingdog_key=scrapingdog_key,
             max_workers=args.max_workers,
+            target_links=args.target_links,
         )
     else:
         annotations = annotate(args.input_path)
@@ -491,11 +586,11 @@ if __name__ == "__main__":
         # Ensure the output directory exists
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
-        print(json.dumps(parsed_result, indent=2, ensure_ascii=False))
+        logger.info(json.dumps(parsed_result, indent=2, ensure_ascii=False))
 
         # # Save parsed result to JSON file
         # out_path = Path(args.output_dir) / "image_search.json"
         # with open(out_path, "w", encoding="utf-8") as f:
         #     json.dump([parsed_result], f, ensure_ascii=False, indent=2)
 
-        # print(f"Saved result to {out_path}")
+        # logger.info(f"Saved result to {out_path}")
