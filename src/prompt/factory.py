@@ -416,10 +416,3 @@ def verification_prompt(
     )
 
     return prompt
-
-
-# Example usage
-if __name__ == "__main__":
-    prompt_dir = "g3/data/prompt_data"
-    prompt = diversification_prompt(prompt_dir=prompt_dir, n_search=5, n_coords=10)
-    print(prompt)

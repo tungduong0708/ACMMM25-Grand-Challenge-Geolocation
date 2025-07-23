@@ -11,6 +11,7 @@ myenv
 .venv
 .env
 acmmm2025-grand-challenge-gg-credentials.json
+cred.json
 **/__pycache__/
 pyproject.toml
 uv.lock

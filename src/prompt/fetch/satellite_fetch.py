@@ -85,11 +85,3 @@ def fetch_satellite_image(
 
     # If all attempts fail
     logger.warning("Unable to fetch Esri imagery: all retry attempts failed.")
-
-
-# Example usage:
-# fetch_satellite_image(31.351667, 34.297778, extend=100)
-
-
-if __name__ == "__main__":
-    fetch_satellite_image(lat=31.507157, lon=34.574117, extend=200)
