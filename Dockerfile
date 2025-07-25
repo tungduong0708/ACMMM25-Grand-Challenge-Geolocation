@@ -12,5 +12,6 @@ RUN playwright install chrome
 RUN playwright install-deps
 
 COPY ./app.py /code/app.py
+COPY ./entrypoint.sh /code/entrypoint.sh
 
-CMD ["bash", "-lc", "Xvfb :99 -screen 0 1920x1080x24 & export DISPLAY=:99 && exec fastapi run app.py --port 80"]
+ENTRYPOINT [ "/code/entrypoint.sh" ]
