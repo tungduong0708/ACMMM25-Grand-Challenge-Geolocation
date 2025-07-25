@@ -81,8 +81,7 @@ async def fetch_texts(
             headless=headless,
             no_viewport=True,
         )
-        context = await browser.new_context()
-        pages = [await context.new_page() for _ in urls]
+        pages = [await browser.new_page() for _ in urls]
 
         tasks = [_fetch_text(page, url, wait_until) for page, url in zip(pages, urls)]
         results_raw = await asyncio.gather(*tasks, return_exceptions=True)
