@@ -58,7 +58,12 @@ async def fetch_text(
     url: str, headless: bool = False, wait_until: WaitUntil = "load"
 ) -> PageText:
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=headless)
+        browser = await pw.chromium.launch_persistent_context(
+            user_data_dir="",
+            channel="chrome",
+            headless=headless,
+            no_viewport=True,
+        )
         page = await browser.new_page()
         text = await _fetch_text(page, url, wait_until)
         await browser.close()
@@ -70,7 +75,12 @@ async def fetch_texts(
     urls: list[str], headless: bool = False, wait_until: WaitUntil = "load"
 ) -> list[PageText | BaseException]:
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=headless)
+        browser = await pw.chromium.launch_persistent_context(
+            user_data_dir="",
+            channel="chrome",
+            headless=headless,
+            no_viewport=True,
+        )
         context = await browser.new_context()
         pages = [await context.new_page() for _ in urls]
 
