@@ -1,4 +1,3 @@
-import argparse
 import base64
 import json
 import logging
@@ -9,12 +8,10 @@ from pathlib import Path
 from threading import Lock
 
 import requests
-from dotenv import load_dotenv
 from google.cloud import vision
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-load_dotenv()
 logger = logging.getLogger("uvicorn.error")
 
 # GOOGLE CLOUD VISION API
@@ -289,8 +286,8 @@ def process_scrapingdog_only(image_path: str) -> list[str]:
     try:
         scrapingdog_search_result = search_with_scrapingdog_lens(
             image_path=image_path,
-            imgbb_key=imgbb_key,
-            scrapingdog_key=scrapingdog_key,
+            imgbb_key=os.environ["IMGBB_API_KEY"],
+            scrapingdog_key=os.environ["SCRAPINGDOG_API_KEY"],
         )
         scrapingdog_result = get_image_links_scrapingdog(
             scrapingdog_search_result, n_results=5
@@ -528,79 +525,3 @@ def image_search_directory(
         f"✅ Saved results to {out_path}\n"
         f"📊 Summary: {vision_links_count} Vision + {scrapingdog_links_count} ScrapingDog = {total_unique_links} total unique links"
     )
-
-
-if __name__ == "__main__":
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = (
-        "C:\\Users\\tungd\\OneDrive - MSFT\\Second Year\\ML\\ACMMM25 - Grand Challenge on Multimedia Verification\\G3-Original\\acmmm2025-grand-challenge-gg-credentials.json"
-    )
-    parser = argparse.ArgumentParser(
-        description="Perform web detection on a single image or all images in a directory.",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument(
-        "input_path",
-        help="Path to an image file or a directory containing image files.",
-    )
-    parser.add_argument(
-        "--output_dir",
-        type=str,
-        default="src/prompt/search",
-        help="Directory to save JSON output",
-    )
-    parser.add_argument(
-        "--max_workers",
-        type=int,
-        default=4,
-        help="Maximum number of parallel workers (default: 4)",
-    )
-    parser.add_argument(
-        "--target_links",
-        type=int,
-        default=20,
-        help="Target number of unique links to collect (default: 20)",
-    )
-    args = parser.parse_args()
-
-    if os.path.isdir(args.input_path):
-        imgbb_key = os.getenv("IMGBB_API_KEY", "YOUR_IMGBB_API_KEY")
-        scrapingdog_key = os.getenv("SCRAPINGDOG_API_KEY", "YOUR_SCRAPINGDOG_API_KEY")
-
-        # Check if API keys are available
-        if (
-            imgbb_key == "YOUR_IMGBB_API_KEY"
-            or scrapingdog_key == "YOUR_SCRAPINGDOG_API_KEY"
-        ):
-            logger.info(
-                "Warning: ImgBB and/or ScrapingDog API keys not found in environment variables."
-            )
-            logger.info(
-                "ScrapingDog search will be skipped. Only Google Vision API results will be available."
-            )
-            logger.info(
-                "To enable ScrapingDog search, set IMGBB_API_KEY and SCRAPINGDOG_API_KEY environment variables."
-            )
-
-        image_search_directory(
-            directory=args.input_path,
-            output_dir=args.output_dir,
-            imgbb_key=imgbb_key,
-            scrapingdog_key=scrapingdog_key,
-            max_workers=args.max_workers,
-            target_links=args.target_links,
-        )
-    else:
-        annotations = annotate(args.input_path)
-        parsed_result = parse_web_detection(annotations)
-
-        # Ensure the output directory exists
-        Path(args.output_dir).mkdir(parents=True, exist_ok=True)
-
-        logger.info(json.dumps(parsed_result, indent=2, ensure_ascii=False))
-
-        # # Save parsed result to JSON file
-        # out_path = Path(args.output_dir) / "image_search.json"
-        # with open(out_path, "w", encoding="utf-8") as f:
-        #     json.dump([parsed_result], f, ensure_ascii=False, indent=2)
-
-        # logger.info(f"Saved result to {out_path}")

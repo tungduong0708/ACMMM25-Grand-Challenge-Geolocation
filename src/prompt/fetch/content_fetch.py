@@ -58,7 +58,12 @@ async def fetch_text(
     url: str, headless: bool = False, wait_until: WaitUntil = "load"
 ) -> PageText:
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=headless)
+        browser = await pw.chromium.launch_persistent_context(
+            user_data_dir="",
+            channel="chrome",
+            headless=headless,
+            no_viewport=True,
+        )
         page = await browser.new_page()
         text = await _fetch_text(page, url, wait_until)
         await browser.close()
@@ -70,7 +75,12 @@ async def fetch_texts(
     urls: list[str], headless: bool = False, wait_until: WaitUntil = "load"
 ) -> list[PageText | BaseException]:
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=headless)
+        browser = await pw.chromium.launch_persistent_context(
+            user_data_dir="",
+            channel="chrome",
+            headless=headless,
+            no_viewport=True,
+        )
         context = await browser.new_context()
         pages = [await context.new_page() for _ in urls]
 
@@ -151,20 +161,3 @@ async def fetch_links_to_json(
     )
     failed = len(json_data) - successful
     logger.info(f"📊 Summary: {successful} successful, {failed} failed")
-
-
-# Example usage
-if __name__ == "__main__":
-    # Example usage
-    test_links = [
-        "https://www.rainews.it/dl/img/2022/05/06/1651819610247_fermata_bus_Avdivka.jpg"
-    ]
-
-    # Run the async function
-    asyncio.run(
-        fetch_links_to_json(
-            links=test_links,
-            output_path="content_results.json",
-            max_content_length=5000,  # Limit content to 5000 characters per link
-        )
-    )

@@ -7,7 +7,6 @@ from typing import Optional
 import httpx
 from dotenv import load_dotenv
 
-load_dotenv()
 logger = logging.getLogger("uvicorn.error")
 
 
@@ -260,50 +259,3 @@ def text_search_link(
 
     logger.info(f"✅ Saved {len(links)} search results to: {output_path}")
     return output_path
-
-
-if __name__ == "__main__":
-    query = "Video showing a kindergarten celebrating May 9th dressed as soldiers"
-
-    # # Test image search
-    # print("Testing image search...")
-    # images = text_search_image(
-    #     query,
-    #     num_images=5,
-    #     api_key=os.getenv("GOOGLE_CLOUD_API_KEY"),
-    #     cx=os.getenv("GOOGLE_CSE_CX")
-    # )
-    # print(f"Downloaded {len(images)} images for query '{query}':")
-    # for img in images:
-    #     print(img)
-
-    print("\n" + "=" * 50 + "\n")
-
-    # Test link search
-    print("Testing link search...")
-    links_file = text_search_link(
-        query,
-        output_dir="g3/data/prompt_data",
-        filename="text_search_results.json",
-        num_results=10,
-        api_key=os.getenv("GOOGLE_CLOUD_API_KEY"),
-        cx=os.getenv("GOOGLE_CSE_CX"),
-    )
-    print(f"Saved search results to: {links_file}")
-
-    # Display first few results
-    with open(links_file, "r", encoding="utf-8") as f:
-        data = json.load(f)
-        print(f"\nFound {data['total_results']} results:")
-        for i, result in enumerate(data["results"][:3], 1):
-            print(f"{i}. {result['title']}")
-            print(f"   {result['link']}")
-            print(f"   {result['snippet'][:100]}...")
-            print()
-    links = text_search_link(
-        query,
-        num_results=5,
-        api_key=os.getenv("GOOGLE_CLOUD_API_KEY"),
-        cx=os.getenv("GOOGLE_CSE_CX"),
-    )
-    print(f"Saved search results to: {links}")

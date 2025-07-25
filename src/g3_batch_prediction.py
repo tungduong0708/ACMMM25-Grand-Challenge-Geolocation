@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 import os
 import shutil
@@ -8,7 +7,6 @@ from pathlib import Path
 import numpy as np
 import torch
 import yaml
-from dotenv import dotenv_values
 from google import genai
 from google.genai import types
 from pydantic import ValidationError
@@ -63,7 +61,6 @@ class G3BatchPredictor:
             device (str): Device to run model on ("cuda" or "cpu")
             index_path (str): Path to FAISS index for RAG (required)
         """
-        self.env = dotenv_values(".env")
         self.device = torch.device(device)
         self.base_path = Path(__file__).parent
         self.checkpoint_path = self.base_path / checkpoint_path
@@ -175,7 +172,7 @@ class G3BatchPredictor:
                     image = types.Part.from_bytes(data=f.read(), mime_type="image/jpeg")
                 images.append(image)
 
-        client = genai.Client(api_key=self.env["GOOGLE_CLOUD_API_KEY"])
+        client = genai.Client(api_key=os.environ["GOOGLE_CLOUD_API_KEY"])
 
         async def api_call():
             loop = asyncio.get_event_loop()
@@ -333,7 +330,7 @@ class G3BatchPredictor:
             )
         else:
             prompt = location_prompt(location)
-            client = genai.Client(api_key=self.env["GOOGLE_CLOUD_API_KEY"])
+            client = genai.Client(api_key=os.environ["GOOGLE_CLOUD_API_KEY"])
 
             async def api_call():
                 # Run the synchronous API call in a thread executor to make it truly async
@@ -415,7 +412,7 @@ class G3BatchPredictor:
             text_prediction=text_prediction,
         )
 
-        client = genai.Client(api_key=self.env["GOOGLE_CLOUD_API_KEY"])
+        client = genai.Client(api_key=os.environ["GOOGLE_CLOUD_API_KEY"])
 
         async def api_call():
             # Run the synchronous API call in a thread executor to make it truly async
@@ -565,60 +562,3 @@ class G3BatchPredictor:
                 logger.info(f"Deleted folder: {dir_path}")
             else:
                 logger.info(f"Folder does not exist: {dir_path}")
-
-
-if __name__ == "__main__":
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = (
-        "acmmm2025-grand-challenge-gg-credentials.json"
-    )
-    import argparse
-
-    parser = argparse.ArgumentParser(description="G3 Batch Predictor Test")
-
-    args = parser.parse_args()
-
-    async def main():
-        logging.basicConfig(
-            level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
-        )
-        try:
-            logging.info("🚀 Starting G3 Batch Predictor...")
-
-            # # Initialize predictor
-            predictor = G3BatchPredictor(
-                device="cuda" if torch.cuda.is_available() else "cpu"
-            )
-
-            # Run prediction - always use the predict method for 3 modalities
-            logging.info("\n🔄 Running complete multi-modal prediction pipeline...")
-            result = await predictor.predict(model_name="gemini-2.5-pro")
-
-            with open("g3_batch_prediction_result.json", "w") as f:
-                json.dump(result.model_dump(), f, indent=2)
-
-            logging.info(json.dumps(result.model_dump(), indent=2))
-            result = predictor.get_response(result)
-            with open("g3_batch_prediction_result_base64.json", "w") as f:
-                json.dump(result.model_dump(), f, indent=2)
-
-            transcript = predictor.get_transcript()
-            if transcript:
-                logging.info("\n📜 Transcript:")
-                logging.info(transcript)
-            else:
-                logging.info("\n📜 No transcript found.")
-
-            # predictor.clear_directories()
-            logging.info("\n✅ Cleared input and prompt directories.")
-
-            logging.info("\n🎉 Multi-modal prediction completed successfully!")
-
-        except Exception as e:
-            logging.error(f"❌ Multi-modal prediction failed: {e}")
-            import traceback
-
-            logging.error(traceback.format_exc())
-            exit(1)
-
-    # Run the async main function
-    asyncio.run(main())

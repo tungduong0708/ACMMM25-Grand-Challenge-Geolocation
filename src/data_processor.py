@@ -6,7 +6,6 @@ from pathlib import Path
 
 import faiss
 import torch
-from dotenv import dotenv_values
 from PIL import Image
 from torch import nn
 
@@ -62,8 +61,6 @@ class DataProcessor:
             ".mov",
             ".mkv",
         }
-
-        self.env = dotenv_values(".env")
 
     def __extract_keyframes(self):
         """
@@ -126,11 +123,11 @@ class DataProcessor:
         """
         image_dir = self.image_dir
 
-        if self.env["IMGBB_API_KEY"] is None:
+        if os.environ["IMGBB_API_KEY"] is None:
             raise ValueError(
                 "IMGBB_API_KEY environment variable is not set or is None."
             )
-        if self.env["SCRAPINGDOG_API_KEY"] is None:
+        if os.environ["SCRAPINGDOG_API_KEY"] is None:
             raise ValueError(
                 "SCRAPINGDOG_API_KEY environment variable is not set or is None."
             )
@@ -138,8 +135,8 @@ class DataProcessor:
             directory=str(image_dir),
             output_dir=str(self.prompt_dir),
             filename="image_search.json",
-            imgbb_key=self.env["IMGBB_API_KEY"],
-            scrapingdog_key=self.env["SCRAPINGDOG_API_KEY"],
+            imgbb_key=os.environ["IMGBB_API_KEY"],
+            scrapingdog_key=os.environ["SCRAPINGDOG_API_KEY"],
             max_workers=4,
             target_links=20
         )
@@ -162,8 +159,8 @@ class DataProcessor:
             output_dir=str(self.prompt_dir),
             filename="text_search.json",
             num_results=10,
-            api_key=self.env["GOOGLE_CLOUD_API_KEY"],
-            cx=self.env["GOOGLE_CSE_CX"],
+            api_key=os.environ["GOOGLE_CLOUD_API_KEY"],
+            cx=os.environ["GOOGLE_CSE_CX"],
         )
 
     async def __fetch_related_link_content(
@@ -361,11 +358,11 @@ class DataProcessor:
         logger.info("🔄 Fetching satellite image and location images in parallel...")
 
         # Ensure required API keys are present
-        if not self.env.get("GOOGLE_CLOUD_API_KEY"):
+        if not os.environ.get("GOOGLE_CLOUD_API_KEY"):
             raise ValueError(
                 "GOOGLE_CLOUD_API_KEY environment variable is not set or is None."
             )
-        if not self.env.get("GOOGLE_CSE_CX"):
+        if not os.environ.get("GOOGLE_CSE_CX"):
             raise ValueError(
                 "GOOGLE_CSE_CX environment variable is not set or is None."
             )
@@ -380,8 +377,8 @@ class DataProcessor:
             self.__search_images_async(
                 location=prediction["location"],
                 num_images=5,
-                api_key=self.env["GOOGLE_CLOUD_API_KEY"],
-                cse_cx=self.env["GOOGLE_CSE_CX"],
+                api_key=os.environ["GOOGLE_CLOUD_API_KEY"],
+                cse_cx=os.environ["GOOGLE_CSE_CX"],
                 output_dir=image_dir,
                 image_id_offset=satellite_image_id + 1,
             ),
