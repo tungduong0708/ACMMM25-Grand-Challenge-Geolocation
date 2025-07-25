@@ -48,7 +48,7 @@ def color_histogram(img: np.ndarray) -> np.ndarray:
 def sample_frames_per_shot(
     video_path: str, start: float, end: float, step: float = 1.0
 ) -> list[np.ndarray]:
-    logger.info(f"Sampling frames from {start:.2f}s to {end:.2f}s every {step:.2f}s")
+    # logger.info(f"Sampling frames from {start:.2f}s to {end:.2f}s every {step:.2f}s")
     cap = cv2.VideoCapture(video_path)
     frames = []
     t = start
@@ -61,7 +61,7 @@ def sample_frames_per_shot(
         frames.append(frame)
         t += step
     cap.release()
-    logger.info(f"Sampled {len(frames)} frames for shot interval.")
+    # logger.info(f"Sampled {len(frames)} frames for shot interval.")
     return frames
 
 
@@ -105,14 +105,14 @@ def kmeans_silhouette(features: np.ndarray):
         matches = np.where((features == c).all(axis=1))[0]
         if matches.size > 0:
             center_indices.append(int(matches[0]))
-    logger.info(f"KMeans silhouette: best_k={best_k}, best_score={best_score:.4f}")
+    # logger.info(f"KMeans silhouette: best_k={best_k}, best_score={best_score:.4f}")
     return best_k, best_centers, center_indices
 
 
 def redundancy_filter(
     video_path: str, indices: list[int], threshold: float
 ) -> list[int]:
-    logger.info(f"Filtering redundant frames with threshold {threshold}")
+    # logger.info(f"Filtering redundant frames with threshold {threshold}")
     histos = []
     cap = cv2.VideoCapture(video_path)
     for idx in indices:
@@ -128,7 +128,7 @@ def redundancy_filter(
             for nh in histos[:i]
         ):
             keep.append(indices[i])
-    logger.info(f"Filtered down to {len(keep)} non-redundant frames.")
+    # logger.info(f"Filtered down to {len(keep)} non-redundant frames.")
     return keep
 
 
@@ -154,9 +154,9 @@ def extract_and_save_keyframes(
     output_idx = start_index
 
     for shot_idx, (start, end) in enumerate(intervals):
-        logger.info(
-            f"Processing shot {shot_idx + 1}/{len(intervals)}: {start:.2f}s to {end:.2f}s"
-        )
+        # logger.info(
+        #     f"Processing shot {shot_idx + 1}/{len(intervals)}: {start:.2f}s to {end:.2f}s"
+        # )
 
         # Sample frames & extract features
         frames = sample_frames_per_shot(video_path, start, end, step)

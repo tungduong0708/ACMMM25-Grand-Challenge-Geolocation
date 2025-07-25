@@ -1,50 +1,158 @@
-This is the code repository for paper "G3: An Effective and Adaptive Framework for Worldwide Geolocalization Using Large Multi-Modality Models"
+# G3 Geolocation Service
 
-# MP16-Pro
+This is a containerized geolocation service based on the paper "G3: An Effective and Adaptive Framework for Worldwide Geolocalization Using Large Multi-Modality Models". The service is augmented with multilayer verification for location and evidence.
 
-You can download the images and metadata of MP16-Pro from huggingface: [Jia-py/MP16-Pro](https://huggingface.co/datasets/Jia-py/MP16-Pro/tree/main)
+## Prerequisites
 
-# Data
+- Docker with GPU support
+- NVIDIA Container Toolkit (for GPU access)
+- Required API keys (see Environment Variables section)
 
-IM2GPS3K: [images](http://www.mediafire.com/file/7ht7sn78q27o9we/im2gps3ktest.zip) | [metadata](https://raw.githubusercontent.com/TIBHannover/GeoEstimation/original_tf/meta/im2gps3k_places365.csv)
+## Quick Start
 
-YFCC4K: [images](http://www.mediafire.com/file/3og8y3o6c9de3ye/yfcc4k.zip) | [metadata](https://github.com/TIBHannover/GeoEstimation/releases/download/pytorch/yfcc25600_places365.csv)
+### 1. Prepare Environment File
 
-# Environment Setting
+Create a `.env` file with the following variables:
 
 ```bash
-# test on cuda12.0
-conda create -n g3 python=3.9
-pip install torch==2.1.1 torchvision==0.16.1 torchaudio==2.1.1 --index-url https://download.pytorch.org/whl/cu121
-pip install transformers accelerate huggingface_hub pandas
+GOOGLE_CLOUD_API_KEY=your_google_cloud_api_key
+GOOGLE_CSE_CX=your_google_custom_search_engine_id
+SCRAPINGDOG_API_KEY=your_scrapingdog_api_key
+IMGBB_API_KEY=your_imgbb_api_key
+GOOGLE_APPLICATION_CREDENTIALS=/code/path/to/your/credentials.json
 ```
 
-# Running samples
+### 2. Prepare Google Cloud Credentials
 
-1. Geo-alignment
+Ensure you have a Google Cloud service account JSON credentials file ready for copying to the container.
 
-You can run `python run_G3.py` to train the model.
+### 3. Build Docker Image
 
-2. Geo-diversification
+```bash
+docker build -t g3-geolocation .
+```
 
-First, you need to build the index file using `python IndexSearch.py`. 
+### 4. Create Docker Container
 
-Parameters in IndexSearch.py
-- index name --> which model you want to use for embedding
-- dataset --> im2gps3k or yfcc4k
-- database --> default mp16
+```bash
+docker create --name g3-container -p 80:80 --gpus=all --env-file .env g3-geolocation
+```
 
-Then, you also need to construct index for negative samples by modifying images_embeds to -1 * images_embeds
+### 5. Copy Credentials to Container
 
-Then, you can run `llm_predict_hf.py` or `llm_predict.py` to generate llm predictions.
+```bash
+docker cp /path/to/your/credentials.json g3-container:/code/
+```
 
-After that, `running aggregate_llm_predictions.py` to aggregate the predictions.
+### 6. Start Container
 
-3. Geo-verification
+```bash
+docker start g3-container
+```
 
-`python IndexSearch.py --index=g3 --dataset=im2gps3k or yfcc4k` to verificate predictions and evaluate.
+## Usage
 
-# Citation
+Once the container is running, the service will be available at `http://localhost:80`.
+
+### API Endpoints
+
+- **POST** `/g3/predict` - Submit images/videos for geolocation prediction
+- **GET** `/g3/openapi` - Get OpenAPI specification
+
+### Example Request
+
+```bash
+curl -X POST "http://localhost:80/g3/predict" \
+  -H "Content-Type: multipart/form-data" \
+  -F "files=@your_image.jpg"
+```
+
+## Environment Variables
+
+| Variable                         | Description                                | Required |
+| -------------------------------- | ------------------------------------------ | -------- |
+| `GOOGLE_CLOUD_API_KEY`           | Google Cloud API key for Gemini and Custom Google Search API        | Yes      |
+| `GOOGLE_CSE_CX`                  | Google Custom Search Engine ID             | Yes      |
+| `SCRAPINGDOG_API_KEY`            | ScrapingDog API key for web scraping       | Yes      |
+| `IMGBB_API_KEY`                  | ImgBB API key for image hosting            | Yes      |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Path to Google Cloud credentials JSON file | Yes      |
+
+## API Keys Setup
+
+### Google Cloud API Key
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Enable Gemini API and Vision API
+3. Create an API key in the Credentials section
+
+### Google Custom Search Engine
+
+1. Go to [Google Custom Search](https://cse.google.com/)
+2. Create a new search engine
+3. Copy the Search Engine ID (CX)
+
+### ScrapingDog API Key
+
+1. Sign up at [ScrapingDog](https://scrapingdog.com/)
+2. Get your API key from the dashboard
+
+### ImgBB API Key
+
+1. Sign up at [ImgBB](https://imgbb.com/)
+2. Get your API key from the API section
+
+## Container Management
+
+### View Logs
+
+```bash
+docker logs g3-container
+```
+
+### Stop Container
+
+```bash
+docker stop g3-container
+```
+
+### Remove Container
+
+```bash
+docker rm g3-container
+```
+
+### Remove Image
+
+```bash
+docker rmi g3-geolocation
+```
+
+## Troubleshooting
+
+### GPU Access Issues
+
+Ensure NVIDIA Container Toolkit is properly installed:
+
+```bash
+nvidia-smi
+docker run --rm --gpus all nvidia/cuda:11.0-base-ubuntu20.04 nvidia-smi
+```
+
+### API Key Issues
+
+- Verify all API keys are valid and have proper permissions
+- Check that the credentials file is properly copied to the container
+- Ensure the `GOOGLE_APPLICATION_CREDENTIALS` path matches the copied file location
+
+### Memory Issues
+
+If you encounter out-of-memory errors, consider:
+
+- Reducing image sizes before upload
+- Using a machine with more RAM/VRAM
+- Adjusting batch processing parameters
+
+## Citation
 
 ```bib
 @article{jia2024g3,
