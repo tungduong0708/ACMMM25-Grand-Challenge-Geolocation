@@ -387,7 +387,7 @@ class DataProcessor:
                 if not dest_file.exists() or not self.__compare_directories(
                     item, dest_file
                 ):
-                    item.replace(dest_file)
+                    shutil.copy2(item, dest_file)
 
     async def preprocess_input_data(
         self,
