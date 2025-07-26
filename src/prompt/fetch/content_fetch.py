@@ -19,6 +19,10 @@ WaitUntil = Literal["load", "domcontentloaded", "networkidle", "commit"]
 
 
 async def _inject_readability(page: Page) -> None:
+    is_html = await page.evaluate("() => document.documentElement.nodeName === 'HTML'")
+    if not is_html:
+        return
+    
     await page.add_script_tag(url=READABILITY_JS_URL)
     await page.add_script_tag(
         content="window.__readability__ = new Readability(document.cloneNode(true));"
