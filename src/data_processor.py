@@ -2,6 +2,8 @@ import asyncio
 import json
 import logging
 import os
+import hashlib
+import shutil
 from pathlib import Path
 
 import faiss
@@ -26,6 +28,7 @@ class DataProcessor:
         model: nn.Module,
         input_dir: Path,
         prompt_dir: Path,
+        cache_dir: Path,
         image_dir: Path,
         audio_dir: Path,
         index_path: Path,
@@ -34,6 +37,7 @@ class DataProcessor:
     ):
         self.input_dir = input_dir
         self.prompt_dir = prompt_dir
+        self.cache_dir = cache_dir
         self.image_dir = image_dir
         self.audio_dir = audio_dir
         self.model = model
@@ -138,7 +142,7 @@ class DataProcessor:
             imgbb_key=os.environ["IMGBB_API_KEY"],
             scrapingdog_key=os.environ["SCRAPINGDOG_API_KEY"],
             max_workers=4,
-            target_links=20
+            target_links=20,
         )
         logger.info(f"✅ Successfully performed image search on: {image_dir}")
 
@@ -307,6 +311,84 @@ class DataProcessor:
             image_id_offset,
         )
 
+    def __compute_sha256(self, filepath: Path) -> str:
+        """
+        Compute the SHA-256 hash of a file.
+        """
+        if not filepath.is_file():
+            raise ValueError(f"File does not exist: {filepath}")
+
+        sha256 = hashlib.sha256()
+        with open(filepath, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                sha256.update(chunk)
+        return sha256.hexdigest()
+
+    def __compare_directories(self, dir1: Path, dir2: Path) -> bool:
+        """
+        Compare two directories to check if they contain the same files with identical content.
+        Args:
+            dir1 (Path): First directory to compare.
+            dir2 (Path): Second directory to compare.
+        Returns:
+            bool: True if both directories contain the same files with identical content, False otherwise.
+        """
+        if not dir1.is_dir() or not dir2.is_dir():
+            return False
+
+        files1 = sorted(p for p in dir1.iterdir() if p.is_file())
+        files2 = sorted(p for p in dir2.iterdir() if p.is_file())
+
+        # Check if filenames match exactly
+        names1 = {p.name for p in files1}
+        names2 = {p.name for p in files2}
+        if names1 != names2:
+            return False
+
+        # Compare each matching file
+        for filename in names1:
+            path1 = dir1 / filename
+            path2 = dir2 / filename
+
+            # Skip directories
+            if not path1.is_file() or not path2.is_file():
+                continue
+
+            hash1 = self.__compute_sha256(path1)
+            hash2 = self.__compute_sha256(path2)
+
+            if hash1 != hash2:
+                return False  # Found mismatch
+        return True  # All matching files are identical
+
+    def __copy_directory(self, src: Path, dest: Path):
+        """
+        Recursively copy all files from src to dest.
+        """
+        if not src.is_dir():
+            raise ValueError(f"Source path is not a directory: {src}")
+
+        # Delete everything in dest first
+        if dest.exists():
+            for item in dest.iterdir():
+                if item.is_file() or item.is_symlink():
+                    item.unlink()
+                elif item.is_dir():
+                    shutil.rmtree(item)
+
+        # Ensure dest exists
+        dest.mkdir(parents=True, exist_ok=True)
+
+        for item in src.iterdir():
+            if item.is_dir():
+                self.__copy_directory(item, dest / item.name)
+            else:
+                dest_file = dest / item.name
+                if not dest_file.exists() or not self.__compare_directories(
+                    item, dest_file
+                ):
+                    item.replace(dest_file)
+
     async def preprocess_input_data(
         self,
         image_prediction: bool = True,
@@ -320,6 +402,17 @@ class DataProcessor:
         Save images and extracted keyframes into the output directory
         """
         os.makedirs(self.prompt_dir, exist_ok=True)
+        os.makedirs(self.cache_dir, exist_ok=True)
+
+        cache_dir_input = self.cache_dir / "input_data"
+        cache_dir_prompt = self.cache_dir / "prompt_data"
+        if self.__compare_directories(self.input_dir, cache_dir_input):
+            logger.info("Input data already processed, skipping...")
+            self.__copy_directory(cache_dir_prompt, self.prompt_dir)
+            return
+        else:
+            logger.info("Processing input data...")
+
         metadata_dest = self.prompt_dir / "metadata.json"
         if not metadata_dest.exists():
             for file in os.listdir(self.input_dir):
@@ -336,6 +429,11 @@ class DataProcessor:
             image_prediction=image_prediction, text_prediction=text_prediction
         )
         self.__index_search()
+
+        logger.info("✅ Preprocessing completed")
+        logger.info(f"Saving processed data to cache directory: {self.cache_dir}")
+        self.__copy_directory(self.input_dir, cache_dir_input)
+        self.__copy_directory(self.prompt_dir, cache_dir_prompt)
 
     async def prepare_location_images(
         self,

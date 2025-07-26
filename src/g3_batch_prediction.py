@@ -48,6 +48,7 @@ class G3BatchPredictor:
         device: str = "cuda",
         input_dir: str = "data/input_data",
         prompt_dir: str = "data/prompt_data",
+        cache_dir: str = "data/cache",
         index_path: str = "data/index/G3.index",
         hparams_path: str = "g3/hparams.yaml",
         database_csv_path: str = "data/dataset/mp16/MP16_Pro_filtered.csv",
@@ -67,11 +68,13 @@ class G3BatchPredictor:
 
         self.input_dir = self.base_path / input_dir
         self.prompt_dir = self.base_path / prompt_dir
+        self.cache_dir = self.base_path / cache_dir
         self.image_dir = self.prompt_dir / "images"
         self.audio_dir = self.prompt_dir / "audio"
 
         os.makedirs(self.input_dir, exist_ok=True)
         os.makedirs(self.prompt_dir, exist_ok=True)
+        os.makedirs(self.cache_dir, exist_ok=True)
         os.makedirs(self.image_dir, exist_ok=True)
         os.makedirs(self.audio_dir, exist_ok=True)
 
@@ -92,6 +95,7 @@ class G3BatchPredictor:
             model=self.model,
             input_dir=self.input_dir,
             prompt_dir=self.prompt_dir,
+            cache_dir=self.cache_dir,
             image_dir=self.image_dir,
             audio_dir=self.audio_dir,
             index_path=self.base_path / index_path,
