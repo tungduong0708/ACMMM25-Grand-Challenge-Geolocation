@@ -291,6 +291,7 @@ def extract_and_parse_json(raw_text: str) -> Dict[str, Any]:
 
 def image_to_base64(image_path: Path) -> str:
     if not image_path.is_file():
-        raise FileNotFoundError(f"No such image: {image_path}")
+        logger.error(f"No such image: {image_path}")
+        return ""
     data = image_path.read_bytes()
     return base64.b64encode(data).decode("utf-8")

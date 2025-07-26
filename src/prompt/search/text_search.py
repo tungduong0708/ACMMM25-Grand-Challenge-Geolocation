@@ -196,11 +196,21 @@ def text_search_link(
     if not api_key or not cx:
         raise ValueError("GOOGLE_CLOUD_API_KEY or GOOGLE_CSE_CX not set.")
 
-    os.makedirs(output_dir, exist_ok=True)
-
     links = []
     start = 1
+    if not query:
+        # Prepare final results with metadata
+        search_results = {"query": query, "links": links}
 
+        # Save results to JSON file
+        output_path = os.path.join(output_dir, filename)
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(search_results, f, indent=2, ensure_ascii=False)
+
+        logger.info(f"✅ Saved {len(links)} search results to: {output_path}")
+        return output_path
+
+    os.makedirs(output_dir, exist_ok=True)
     # Google Custom Search API allows max 10 results per request
     while len(links) < num_results:
         remaining = num_results - len(links)

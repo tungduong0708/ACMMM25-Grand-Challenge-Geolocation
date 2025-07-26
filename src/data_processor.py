@@ -148,11 +148,14 @@ class DataProcessor:
         """
         query = ""
         metadata_file = self.prompt_dir / "metadata.json"
-        with open(metadata_file, "r") as f:
-            metadata = json.load(f)
-            description = metadata.get("description", "")
-            location = metadata.get("location", "")
-            query = f"{description} in {location}".strip()
+        if not metadata_file.exists():
+            query = ""
+        else:
+            with open(metadata_file, "r") as f:
+                metadata = json.load(f)
+                description = metadata.get("description", "")
+                location = metadata.get("location", "")
+                query = f"{description} in {location}".strip()
 
         text_search_link(
             query=query,
