@@ -92,6 +92,7 @@ async def predict_endpoint(
 ) -> PredictionResponse:
     # Write files to disk
     try:
+        predictor.clear_directories()
         for file in files:
             filename = file.filename if file.filename is not None else uuid.uuid4().hex
             filepath = predictor.input_dir / filename
@@ -105,8 +106,8 @@ async def predict_endpoint(
         )
 
     # Get prediction
-    result = await predictor.predict(model_name="gemini-2.5-pro")
-    response = predictor.get_response(result)
+    response = await predictor.predict(model_name="gemini-2.5-pro")
+    # response = predictor.get_response(response)
     prediction = LocationPredictionResponse(
         latitude=response.latitude,
         longitude=response.longitude,
@@ -119,7 +120,6 @@ async def predict_endpoint(
     # Get transcript if available
     transcript = predictor.get_transcript()
     # Clear directories
-    predictor.clear_directories()
     return PredictionResponse(prediction=prediction, transcript=transcript)
 
 
